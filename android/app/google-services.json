@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "824636639600",
+    "firebase_url": "https://flutterfire-ef2b1-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "flutterfire-ef2b1",
+    "storage_bucket": "flutterfire-ef2b1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:824636639600:android:ed99059b14b755923de7b5",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtwVSJ8mKTK2Zplpd-q9Z9ioMQiwnQx0Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
