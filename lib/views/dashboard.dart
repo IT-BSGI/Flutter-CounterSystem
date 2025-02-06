@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'home.dart';
 import 'settings.dart';
 import 'data.dart';
+import 'esp32_view.dart';
 
 class DashboardPanel extends StatefulWidget {
   @override
@@ -19,7 +20,8 @@ class _DashboardPanelState extends State<DashboardPanel> {
   final List<Widget> _pages = [
     HomePage(),
     DataPage(),
-    SettingsPage(),
+    // SettingsPage(),
+    CounterDataView(),
   ];
 
   @override
