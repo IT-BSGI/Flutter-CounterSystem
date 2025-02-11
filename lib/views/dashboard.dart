@@ -23,7 +23,7 @@ class _DashboardPanelState extends State<DashboardPanel> {
     // DataPage(),
     CounterTableScreen(),
     // SettingsPage(),
-    CounterDataView(),
+    EditProcessesScreen(),
   ];
 
   @override
