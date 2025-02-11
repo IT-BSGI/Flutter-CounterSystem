@@ -6,6 +6,7 @@ import 'home.dart';
 import 'settings.dart';
 import 'data.dart';
 import 'esp32_view.dart';
+import 'counter_table_screen.dart';
 
 class DashboardPanel extends StatefulWidget {
   @override
@@ -19,7 +20,8 @@ class _DashboardPanelState extends State<DashboardPanel> {
   // List halaman yang akan ditampilkan
   final List<Widget> _pages = [
     HomePage(),
-    DataPage(),
+    // DataPage(),
+    CounterTableScreen(),
     // SettingsPage(),
     CounterDataView(),
   ];

@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'firebase_options.dart';
 
+import 'views/dashboard.dart';
 import 'views/counter_table_screen.dart';
 
 void main() async {
@@ -21,7 +22,8 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Counter Table',
       theme: ThemeData(primarySwatch: Colors.blue),
-      home: CounterTableScreen(),
+      // home: CounterTableScreen(),
+      home: DashboardPanel(),
     );
   }
 }
