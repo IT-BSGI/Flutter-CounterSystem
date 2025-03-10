@@ -12,11 +12,11 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   bool _isLoading = true;
 
   final Map<String, String> lineTitles = {
-    "line_a": "Process Name Line A",
-    "line_b": "Process Name Line B",
-    "line_c": "Process Name Line C",
-    "line_d": "Process Name Line D",
-    "line_e": "Process Name Line E",
+    "process_line_A": "Process Name Line A",
+    "process_line_B": "Process Name Line B",
+    "process_line_C": "Process Name Line C",
+    "process_line_D": "Process Name Line D",
+    "process_line_E": "Process Name Line E",
   };
 
   @override
@@ -29,14 +29,14 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
     try {
       DocumentSnapshot snapshot = await _firestore
           .collection('basic_data')
-          .doc('process_line')
+          .doc('data_process')
           .get();
 
       if (!snapshot.exists) return;
 
       Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
 
-      List<String> orderedLines = ["line_a", "line_b", "line_c", "line_d", "line_e"];
+      List<String> orderedLines = ["process_line_A", "process_line_B", "process_line_C", "process_line_D", "process_line_E"];
 
       Map<String, List<TextEditingController>> controllers = {};
 
@@ -61,7 +61,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
           .where((text) => text.isNotEmpty)
           .toList();
 
-      await _firestore.collection('basic_data').doc('process_line').update({
+      await _firestore.collection('basic_data').doc('data_process').update({
         line: updatedProcesses,
       });
 

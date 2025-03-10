@@ -47,34 +47,28 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCymCFU1skBDd022LYu95w--fa43D10jKU',
-    appId: '1:824636639600:web:e353654bdc8c1bb23de7b5',
-    messagingSenderId: '824636639600',
-    projectId: 'flutterfire-ef2b1',
-    authDomain: 'flutterfire-ef2b1.firebaseapp.com',
-    databaseURL: 'https://flutterfire-ef2b1-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'flutterfire-ef2b1.firebasestorage.app',
-    measurementId: 'G-LV04Q5MT41',
+    apiKey: 'AIzaSyBdPICh7B_qO8PBMW70gl6BxhtYJwkszjY',
+    appId: '1:907203013942:web:d3e0809dba2e5e41a61797',
+    messagingSenderId: '907203013942',
+    projectId: 'bsgi-counter-shirt',
+    authDomain: 'bsgi-counter-shirt.firebaseapp.com',
+    storageBucket: 'bsgi-counter-shirt.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAtwVSJ8mKTK2Zplpd-q9Z9ioMQiwnQx0Y',
-    appId: '1:824636639600:android:ed99059b14b755923de7b5',
-    messagingSenderId: '824636639600',
-    projectId: 'flutterfire-ef2b1',
-    databaseURL: 'https://flutterfire-ef2b1-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'flutterfire-ef2b1.firebasestorage.app',
+    apiKey: 'AIzaSyCJcXz45tkKhbgfSyGnE4oSlDzlrLehhFc',
+    appId: '1:907203013942:android:9ad92bdd80139eb8a61797',
+    messagingSenderId: '907203013942',
+    projectId: 'bsgi-counter-shirt',
+    storageBucket: 'bsgi-counter-shirt.firebasestorage.app',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyCymCFU1skBDd022LYu95w--fa43D10jKU',
-    appId: '1:824636639600:web:6fde7602b84e75fc3de7b5',
-    messagingSenderId: '824636639600',
-    projectId: 'flutterfire-ef2b1',
-    authDomain: 'flutterfire-ef2b1.firebaseapp.com',
-    databaseURL: 'https://flutterfire-ef2b1-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'flutterfire-ef2b1.firebasestorage.app',
-    measurementId: 'G-5GR4NYG1JS',
+    apiKey: 'AIzaSyBdPICh7B_qO8PBMW70gl6BxhtYJwkszjY',
+    appId: '1:907203013942:web:5b6a8a94057d34c6a61797',
+    messagingSenderId: '907203013942',
+    projectId: 'bsgi-counter-shirt',
+    authDomain: 'bsgi-counter-shirt.firebaseapp.com',
+    storageBucket: 'bsgi-counter-shirt.firebasestorage.app',
   );
-
 }

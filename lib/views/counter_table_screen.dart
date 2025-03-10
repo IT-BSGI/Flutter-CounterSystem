@@ -36,13 +36,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     String processName = doc.id;
     Map<String, dynamic> processData = {"process_name": processName};
 
-    DocumentSnapshot timeSnapshot = await counterRef.doc(processName).get();
+    // Ambil data dalam satu kali pemanggilan
+    Map<String, dynamic>? timeData = doc.data() as Map<String, dynamic>?;
 
-    if (timeSnapshot.exists) {
-      Map<String, dynamic>? timeData = timeSnapshot.data() as Map<String, dynamic>?;
-
-      if (timeData != null && timeData.containsKey("07:30")) {
-        processData["07:30"] = timeData["07:30"];
+    if (timeData != null) {
+      for (String time in ["07:30", "08:30", "09:30", "10:30", "11:30", "13:30", "14:30", "15:30", "16:30"]) {
+        if (timeData.containsKey(time)) {
+          processData[time] = timeData[time];
+        }
       }
     }
 
@@ -52,12 +53,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   return result;
 }
 
+
   Future<void> loadData() async {
     setState(() {
       isLoading = true;
     });
 
-    String formattedDate = DateFormat("MM-dd-yyyy").format(selectedDate);
+    String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
     List<Map<String, dynamic>> data = await fetchCounterData(selectedLine, formattedDate);
 
     List<String> timeSlots = ["07:30", "08:30", "09:30", "10:30", "11:30", "13:30", "14:30", "15:30", "16:30"];
@@ -197,7 +199,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                 ),
                 TextButton.icon(
                   icon: Icon(Icons.calendar_today, size: 18), // 🔹 Icon lebih kecil
-                  label: Text(DateFormat("MM-dd-yyyy").format(selectedDate)),
+                  label: Text(DateFormat("yyyy-MM-dd").format(selectedDate)),
                   onPressed: () => selectDate(context),
                 ),
               ],
@@ -206,31 +208,26 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           Expanded(
             child: isLoading
                 ? Center(child: CircularProgressIndicator())
-                : Padding(
-                    padding: const EdgeInsets.all(4.0), // 🔹 Kurangi padding
-                    child: PlutoGrid(
-                      columns: columns,
-                      rows: rows,
-                      columnGroups: columnGroups,
-                      configuration: PlutoGridConfiguration(
-                        columnFilter: PlutoGridColumnFilterConfig(
-                          filters: const [], // 🔹 Nonaktifkan filter
-                          resolveDefaultColumnFilter: (column, resolver) {
-                            return resolver<PlutoFilterTypeContains>()!; // 🔹 Kembalikan filter default tanpa ikon
-                          },
-                        ),
-                        style: PlutoGridStyleConfig(
-                          rowHeight: 30, // 🔹 Baris lebih kecil
-                          columnHeight: 30, // 🔹 Header lebih kecil
-                          cellTextStyle: TextStyle(fontSize: 12), // 🔹 Font lebih kecil
+                : rows.isEmpty
+                    ? Center(child: Text("No Data Available", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)))
+                    : Padding(
+                        padding: const EdgeInsets.all(4.0),
+                        child: PlutoGrid(
+                          columns: columns,
+                          rows: rows,
+                          columnGroups: columnGroups,
+                          configuration: PlutoGridConfiguration(
+                            style: PlutoGridStyleConfig(
+                              rowHeight: 30,
+                              columnHeight: 30,
+                              cellTextStyle: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          mode: PlutoGridMode.readOnly,
                         ),
                       ),
-                      mode: PlutoGridMode.readOnly, // 🔹 Mode readOnly agar lebih ringkas
-                      onLoaded: (PlutoGridOnLoadedEvent event) {},
-                      onChanged: (PlutoGridOnChangedEvent event) {},
-                    ),
-                  ),
           ),
+
         ],
       ),
     );

@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 // import '../providers/esp32_provider.dart';
 import 'home.dart';
 import 'settings.dart';
-import 'data.dart';
-import 'esp32_view.dart';
 import 'counter_table_screen.dart';
 
 class DashboardPanel extends StatefulWidget {

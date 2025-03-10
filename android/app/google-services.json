@@ -1,14 +1,13 @@
 {
   "project_info": {
-    "project_number": "824636639600",
-    "firebase_url": "https://flutterfire-ef2b1-default-rtdb.asia-southeast1.firebasedatabase.app",
-    "project_id": "flutterfire-ef2b1",
-    "storage_bucket": "flutterfire-ef2b1.firebasestorage.app"
+    "project_number": "907203013942",
+    "project_id": "bsgi-counter-shirt",
+    "storage_bucket": "bsgi-counter-shirt.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:824636639600:android:ed99059b14b755923de7b5",
+        "mobilesdk_app_id": "1:907203013942:android:9ad92bdd80139eb8a61797",
         "android_client_info": {
           "package_name": "com.example.flutter_application_1"
         }
@@ -16,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAtwVSJ8mKTK2Zplpd-q9Z9ioMQiwnQx0Y"
+          "current_key": "AIzaSyCJcXz45tkKhbgfSyGnE4oSlDzlrLehhFc"
         }
       ],
       "services": {
