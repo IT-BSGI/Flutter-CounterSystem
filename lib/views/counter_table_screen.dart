@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-// import 'firestore_service.dart'; // Import Firestore service
 
 class CounterTableScreen extends StatefulWidget {
   @override
@@ -29,14 +28,12 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     CollectionReference counterRef = firestore.collection('counter_sistem').doc(line).collection(date);
 
     QuerySnapshot snapshot = await counterRef.get();
-    
-    List<Map<String, dynamic>> result = [];
 
-    for (var doc in snapshot.docs) {
+    if (snapshot.docs.isEmpty) return [];
+
+    return snapshot.docs.map((doc) {
       String processName = doc.id;
       Map<String, dynamic> processData = {"process_name": processName};
-
-      // Ambil data dalam satu kali pemanggilan
       Map<String, dynamic>? timeData = doc.data() as Map<String, dynamic>?;
 
       if (timeData != null) {
@@ -46,18 +43,12 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           }
         }
       }
-
-      result.add(processData);
-    }
-
-    return result;
+      return processData;
+    }).toList();
   }
 
-
   Future<void> loadData() async {
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
     String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
     List<Map<String, dynamic>> data = await fetchCounterData(selectedLine, formattedDate);
@@ -69,8 +60,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         title: "PROCESS",
         field: "process_name",
         type: PlutoColumnType.text(),
-        width: 120, // 🔹 Lebar kolom lebih kecil
-        // textAlign: PlutoColumnTextAlign.center,
+        width: 120,
       ),
     ];
 
@@ -82,7 +72,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           title: "$i",
           field: "${time}_$i",
           type: PlutoColumnType.number(),
-          width: 50, // 🔹 Lebar kolom lebih kecil
+          width: 50,
           textAlign: PlutoColumnTextAlign.center,
         ));
       }
@@ -91,7 +81,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           title: "Total",
           field: "${time}_total",
           type: PlutoColumnType.number(),
-          width: 60, // 🔹 Lebih kecil
+          width: 60,
           textAlign: PlutoColumnTextAlign.center,
           backgroundColor: Colors.yellow.shade200,
         ),
@@ -117,7 +107,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         title: "GRAND TOTAL",
         field: "grand_total",
         type: PlutoColumnType.number(),
-        width: 120, // 🔹 Lebih kecil
+        width: 120,
         textAlign: PlutoColumnTextAlign.center,
         backgroundColor: Colors.orange.shade300,
       ),
@@ -153,9 +143,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       return PlutoRow(cells: cells);
     }).toList();
 
-    setState(() {
-      isLoading = false;
-    });
+    setState(() => isLoading = false);
   }
 
   Future<void> selectDate(BuildContext context) async {
@@ -167,9 +155,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     );
 
     if (picked != null && picked != selectedDate) {
-      setState(() {
-        selectedDate = picked;
-      });
+      setState(() => selectedDate = picked);
       loadData();
     }
   }
@@ -179,21 +165,18 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text("Counter Table"),
-
         actions: [
           IconButton(
             icon: Icon(Icons.refresh),
             tooltip: "Refresh Data",
-            onPressed: () {
-              loadData(); // 🔹 Panggil kembali fungsi untuk mengambil data terbaru
-            },
+            onPressed: () => loadData(),
           ),
         ],
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(4.0), // 🔹 Kurangi padding
+            padding: const EdgeInsets.all(4.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -203,14 +186,12 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                       .map((line) => DropdownMenuItem(value: line, child: Text("Line $line")))
                       .toList(),
                   onChanged: (value) {
-                    setState(() {
-                      selectedLine = value!;
-                    });
+                    setState(() => selectedLine = value!);
                     loadData();
                   },
                 ),
                 TextButton.icon(
-                  icon: Icon(Icons.calendar_today, size: 18), // 🔹 Icon lebih kecil
+                  icon: Icon(Icons.calendar_today, size: 18),
                   label: Text(DateFormat("yyyy-MM-dd").format(selectedDate)),
                   onPressed: () => selectDate(context),
                 ),
@@ -239,7 +220,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                         ),
                       ),
           ),
-
         ],
       ),
     );

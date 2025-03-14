@@ -43,6 +43,7 @@ dependencies:
   chart_engine: ^2.1.0
   excel: ^4.0.6
   path_provider: ^2.1.5
+  firebase_auth: ^5.5.1
 
 dev_dependencies:
   flutter_test:
