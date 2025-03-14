@@ -25,33 +25,33 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   }
 
   Future<List<Map<String, dynamic>>> fetchCounterData(String line, String date) async {
-  FirebaseFirestore firestore = FirebaseFirestore.instance;
-  CollectionReference counterRef = firestore.collection('counter_sistem').doc(line).collection(date);
+    FirebaseFirestore firestore = FirebaseFirestore.instance;
+    CollectionReference counterRef = firestore.collection('counter_sistem').doc(line).collection(date);
 
-  QuerySnapshot snapshot = await counterRef.get();
-  
-  List<Map<String, dynamic>> result = [];
+    QuerySnapshot snapshot = await counterRef.get();
+    
+    List<Map<String, dynamic>> result = [];
 
-  for (var doc in snapshot.docs) {
-    String processName = doc.id;
-    Map<String, dynamic> processData = {"process_name": processName};
+    for (var doc in snapshot.docs) {
+      String processName = doc.id;
+      Map<String, dynamic> processData = {"process_name": processName};
 
-    // Ambil data dalam satu kali pemanggilan
-    Map<String, dynamic>? timeData = doc.data() as Map<String, dynamic>?;
+      // Ambil data dalam satu kali pemanggilan
+      Map<String, dynamic>? timeData = doc.data() as Map<String, dynamic>?;
 
-    if (timeData != null) {
-      for (String time in ["07:30", "08:30", "09:30", "10:30", "11:30", "13:30", "14:30", "15:30", "16:30"]) {
-        if (timeData.containsKey(time)) {
-          processData[time] = timeData[time];
+      if (timeData != null) {
+        for (String time in ["07:30", "08:30", "09:30", "10:30", "11:30", "13:30", "14:30", "15:30", "16:30"]) {
+          if (timeData.containsKey(time)) {
+            processData[time] = timeData[time];
+          }
         }
       }
+
+      result.add(processData);
     }
 
-    result.add(processData);
+    return result;
   }
-
-  return result;
-}
 
 
   Future<void> loadData() async {
@@ -88,7 +88,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       }
       columns.add(
         PlutoColumn(
-          title: "T",
+          title: "Total",
           field: "${time}_total",
           type: PlutoColumnType.number(),
           width: 60, // 🔹 Lebih kecil
@@ -114,10 +114,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
     columns.add(
       PlutoColumn(
-        title: "GRAND T",
+        title: "GRAND TOTAL",
         field: "grand_total",
         type: PlutoColumnType.number(),
-        width: 80, // 🔹 Lebih kecil
+        width: 120, // 🔹 Lebih kecil
         textAlign: PlutoColumnTextAlign.center,
         backgroundColor: Colors.orange.shade300,
       ),
@@ -177,7 +177,19 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Counter Table")),
+      appBar: AppBar(
+        title: Text("Counter Table"),
+
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            tooltip: "Refresh Data",
+            onPressed: () {
+              loadData(); // 🔹 Panggil kembali fungsi untuk mengambil data terbaru
+            },
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(
