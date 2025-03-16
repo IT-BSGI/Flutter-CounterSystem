@@ -38,12 +38,12 @@ class AuthWrapper extends StatelessWidget {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
+          return Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         } else if (snapshot.hasError) {
-          return const Scaffold(
-            body: Center(child: Text("Terjadi kesalahan. Silakan coba lagi!")),
+          return Scaffold(
+            body: Center(child: Text("Error: ${snapshot.error}")),
           );
         }
         return snapshot.hasData ? DashboardPanel() : LoginScreen();
