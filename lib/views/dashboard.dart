@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'home.dart';
 import 'counter_table_screen.dart';
 import 'settings.dart';
-import 'login_screen.dart';
 
 class DashboardPanel extends StatefulWidget {
   @override
@@ -28,6 +27,12 @@ class _DashboardPanelState extends State<DashboardPanel> {
         children: [
           SafeArea(
             child: NavigationRail(
+              backgroundColor: Colors.blueAccent,
+              indicatorColor: Colors.blueAccent.shade700,
+              selectedIconTheme: IconThemeData(color: Colors.white), // Warna ikon aktif
+              unselectedIconTheme: IconThemeData(color: Colors.white70), // Warna ikon non-aktif
+              selectedLabelTextStyle: TextStyle(fontSize: 16, color: Colors.white),
+              unselectedLabelTextStyle: TextStyle(fontSize: 14, color: Colors.white70),
               extended: isRailExpanded,
               destinations: [
                 NavigationRailDestination(
@@ -50,7 +55,7 @@ class _DashboardPanelState extends State<DashboardPanel> {
               leading: Column(
                 children: [
                   IconButton(
-                    icon: Icon(isRailExpanded ? Icons.arrow_back : Icons.menu),
+                    icon: Icon(isRailExpanded ? Icons.arrow_back : Icons.menu, color: Colors.white),
                     onPressed: () {
                       setState(() => isRailExpanded = !isRailExpanded);
                     },
@@ -58,12 +63,52 @@ class _DashboardPanelState extends State<DashboardPanel> {
                   Divider(),
                 ],
               ),
-              trailing: IconButton(
-                icon: Icon(Icons.logout),
-                onPressed: () async {
-                  await FirebaseAuth.instance.signOut();
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                },
+              // trailing: IconButton(
+              //   icon: Icon(Icons.logout),
+              //   onPressed: () async {
+              //     await FirebaseAuth.instance.signOut();
+              //     Navigator.of(context).popUntil((route) => route.isFirst);
+              //   },
+              // ),
+              trailing: Expanded(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: EdgeInsets.only(bottom: 20), // Tambahkan jarak dari bawah
+                    child: Tooltip(
+                      message: "Logout",
+                      child: isRailExpanded
+                          ? InkWell(
+                              onTap: () async {
+                                await FirebaseAuth.instance.signOut();
+                                Navigator.of(context).popUntil((route) => route.isFirst);
+                              },
+                              borderRadius: BorderRadius.circular(10),
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Padding agar lebih mudah diklik
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.logout, color: Colors.white),
+                                    SizedBox(width: 8), // Jarak antara ikon dan teks
+                                    Text(
+                                      "Logout",
+                                      style: TextStyle(color: Colors.white, fontSize: 16),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : IconButton(
+                              icon: Icon(Icons.logout, color: Colors.white),
+                              onPressed: () async {
+                                await FirebaseAuth.instance.signOut();
+                                Navigator.of(context).popUntil((route) => route.isFirst);
+                              },
+                            ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
