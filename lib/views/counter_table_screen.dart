@@ -38,8 +38,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
       if (timeData != null) {
         for (String time in ["07:30", "08:30", "09:30", "10:30", "11:30", "13:30", "14:30", "15:30", "16:30"]) {
-          if (timeData.containsKey(time)) {
-            processData[time] = timeData[time];
+          if (timeData.containsKey(time) && timeData[time] is Map) {
+            for (int i = 1; i <= 5; i++) {
+              processData["${time}_$i"] = timeData[time]["$i"] ?? 0;
+            }
           }
         }
       }
@@ -61,6 +63,12 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         field: "process_name",
         type: PlutoColumnType.text(),
         width: 120,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        backgroundColor: Colors.blue.shade200,
+        enableColumnDrag: false, // Hilangkan ikon garis tiga
+        enableContextMenu: false,
+        // enableDropToResize: false,
+        enableSorting: false,
       ),
     ];
 
@@ -72,8 +80,15 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           title: "$i",
           field: "${time}_$i",
           type: PlutoColumnType.number(),
-          width: 50,
+          width: 40,
+          titleTextAlign: PlutoColumnTextAlign.center,
           textAlign: PlutoColumnTextAlign.center,
+          backgroundColor: Colors.blue.shade100,
+          enableColumnDrag: false, // Hilangkan ikon garis tiga
+          enableContextMenu: false,
+          enableDropToResize: false,
+          enableSorting: false,
+          cellPadding: EdgeInsets.all(1.0),
         ));
       }
       columns.add(
@@ -82,14 +97,29 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           field: "${time}_total",
           type: PlutoColumnType.number(),
           width: 60,
+          titleTextAlign: PlutoColumnTextAlign.center,
           textAlign: PlutoColumnTextAlign.center,
           backgroundColor: Colors.yellow.shade200,
+          enableColumnDrag: false, // Hilangkan ikon garis tiga
+          enableContextMenu: false,
+          enableDropToResize: false,
+          enableSorting: false,
+          cellPadding: EdgeInsets.all(1.0),
+          renderer: (rendererContext) {
+            return Container(
+              color: Colors.yellow.shade100, // Warna untuk seluruh sel
+              alignment: Alignment.center,
+              child: Text(rendererContext.cell.value.toString(),
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            );
+          },
         ),
       );
 
       columnGroups.add(
         PlutoColumnGroup(
           title: time,
+          backgroundColor: Colors.blue.shade200,
           fields: [
             "${time}_1",
             "${time}_2",
@@ -108,8 +138,22 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         field: "grand_total",
         type: PlutoColumnType.number(),
         width: 120,
+        titleTextAlign: PlutoColumnTextAlign.center,
         textAlign: PlutoColumnTextAlign.center,
         backgroundColor: Colors.orange.shade300,
+        enableColumnDrag: false, // Hilangkan ikon garis tiga
+        enableContextMenu: false,
+        enableDropToResize: false,
+        enableSorting: false,
+        cellPadding: EdgeInsets.all(1.0),
+        renderer: (rendererContext) {
+            return Container(
+              color: Colors.orange.shade200, // Warna untuk seluruh sel
+              alignment: Alignment.center,
+              child: Text(rendererContext.cell.value.toString(),
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            );
+          },
       ),
     );
 
@@ -121,20 +165,15 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       int grandTotal = 0;
 
       for (String time in timeSlots) {
-        int count1 = entry[time]?["1"] ?? 0;
-        int count2 = entry[time]?["2"] ?? 0;
-        int count3 = entry[time]?["3"] ?? 0;
-        int count4 = entry[time]?["4"] ?? 0;
-        int count5 = entry[time]?["5"] ?? 0;
+        int total = 0;
 
-        int total = count1 + count2 + count3 + count4 + count5;
+        for (int i = 1; i <= 5; i++) {
+          int count = entry["${time}_$i"] ?? 0;
+          total += count;
+          cells["${time}_$i"] = PlutoCell(value: count);
+        }
+
         grandTotal += total;
-
-        cells["${time}_1"] = PlutoCell(value: count1);
-        cells["${time}_2"] = PlutoCell(value: count2);
-        cells["${time}_3"] = PlutoCell(value: count3);
-        cells["${time}_4"] = PlutoCell(value: count4);
-        cells["${time}_5"] = PlutoCell(value: count5);
         cells["${time}_total"] = PlutoCell(value: total);
       }
 
@@ -163,8 +202,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text("Counter Table"),
+        backgroundColor: Colors.blueAccent.shade200,
         actions: [
           IconButton(
             icon: Icon(Icons.refresh),
@@ -204,16 +245,21 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                 : rows.isEmpty
                     ? Center(child: Text("No Data Available", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)))
                     : Padding(
-                        padding: const EdgeInsets.all(4.0),
+                        // padding: const EdgeInsets.all(4.0),
+                        padding: EdgeInsets.only(left: 8.0, right: 4.0),
                         child: PlutoGrid(
                           columns: columns,
                           rows: rows,
                           columnGroups: columnGroups,
                           configuration: PlutoGridConfiguration(
                             style: PlutoGridStyleConfig(
+                              gridBackgroundColor: Colors.white, // Warna background tabel
+                              rowColor: Colors.blue.shade50,
+                              borderColor: Colors.blue.shade800,
                               rowHeight: 30,
                               columnHeight: 30,
                               cellTextStyle: TextStyle(fontSize: 12),
+                              
                             ),
                           ),
                           mode: PlutoGridMode.readOnly,
