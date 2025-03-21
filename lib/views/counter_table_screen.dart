@@ -204,33 +204,92 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text("Counter Table"),
-        backgroundColor: Colors.blueAccent.shade200,
+        title: Text(
+          "Stock Kumitate per Process",
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.2,
+            color: Colors.black87,
+          ),
+        ),
+        centerTitle: true,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.blue.shade400, Colors.blueAccent.shade700],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 8,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+        ),
+        elevation: 4, // Memberikan efek shadow di bawah AppBar
         actions: [
+           // Menambah jarak dari sisi kanan sebelum tombol
           IconButton(
-            icon: Icon(Icons.refresh),
+            icon: Icon(Icons.refresh, size: 26, color: Colors.white),
             tooltip: "Refresh Data",
             onPressed: () => loadData(),
+            splashRadius: 24, // Efek hover saat ditekan
           ),
+          SizedBox(width: 16),
         ],
       ),
+
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(4.0),
+            padding: const EdgeInsets.all(12.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                DropdownButton<String>(
-                  value: selectedLine,
-                  items: ["A", "B", "C", "D", "E"]
-                      .map((line) => DropdownMenuItem(value: line, child: Text("Line $line")))
-                      .toList(),
-                  onChanged: (value) {
-                    setState(() => selectedLine = value!);
-                    loadData();
-                  },
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.blue.shade500, width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.shade500,
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: selectedLine,
+                      items: ["A", "B", "C", "D", "E"]
+                          .map((line) => DropdownMenuItem(
+                                value: line,
+                                child: Text(
+                                  "Line $line",
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() => selectedLine = value!);
+                        loadData();
+                      },
+                      icon: Icon(Icons.arrow_drop_down, color: Colors.blue.shade600, size: 24),
+                      style: TextStyle(color: Colors.black),
+                      dropdownColor: Colors.white, 
+                      borderRadius: BorderRadius.circular(5), // Membuat sudut lebih halus
+                      menuMaxHeight: 250, // Membatasi tinggi dropdown agar tidak terlalu panjang
+                      menuWidth: 96,
+                    ),
+                  ),
                 ),
+                
                 TextButton.icon(
                   icon: Icon(Icons.calendar_today, size: 18),
                   label: Text(DateFormat("yyyy-MM-dd").format(selectedDate)),
