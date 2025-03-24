@@ -15,7 +15,8 @@ class _DashboardPanelState extends State<DashboardPanel> {
   bool isRailExpanded = true;
 
   final List<Widget> _pages = [
-    HomePage(), 
+    // HomePage(), 
+    Placeholder(),
     CounterTableScreen(),
     EditProcessesScreen(),
   ];
