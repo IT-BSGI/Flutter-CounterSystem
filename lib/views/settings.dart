@@ -12,11 +12,11 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   bool _isLoading = true;
 
   final Map<String, String> lineTitles = {
-    "process_line_A": "Process Name Line A",
-    "process_line_B": "Process Name Line B",
-    "process_line_C": "Process Name Line C",
-    "process_line_D": "Process Name Line D",
-    "process_line_E": "Process Name Line E",
+    "process_line_A": "Line A",
+    "process_line_B": "Line B",
+    "process_line_C": "Line C",
+    "process_line_D": "Line D",
+    "process_line_E": "Line E",
   };
 
   @override
@@ -27,22 +27,28 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
   Future<void> fetchProcessLines() async {
     try {
-      DocumentSnapshot snapshot = await _firestore
-          .collection('basic_data')
-          .doc('data_process')
-          .get();
+      DocumentSnapshot snapshot =
+          await _firestore.collection('basic_data').doc('data_process').get();
 
       if (!snapshot.exists) return;
 
       Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
 
-      List<String> orderedLines = ["process_line_A", "process_line_B", "process_line_C", "process_line_D", "process_line_E"];
+      List<String> orderedLines = [
+        "process_line_A",
+        "process_line_B",
+        "process_line_C",
+        "process_line_D",
+        "process_line_E"
+      ];
 
       Map<String, List<TextEditingController>> controllers = {};
 
       for (String line in orderedLines) {
-        List<String> processes = data[line] != null ? List<String>.from(data[line]) : [];
-        controllers[line] = processes.map((process) => TextEditingController(text: process)).toList();
+        List<String> processes =
+            data[line] != null ? List<String>.from(data[line]) : [];
+        controllers[line] =
+            processes.map((process) => TextEditingController(text: process)).toList();
       }
 
       setState(() {
@@ -84,99 +90,116 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
   void deleteProcess(String line, int index) {
     setState(() {
+      _controllers[line]![index].dispose();
       _controllers[line]!.removeAt(index);
     });
   }
 
   @override
+  void dispose() {
+    _controllers.forEach((key, controllers) {
+      for (var controller in controllers) {
+        controller.dispose();
+      }
+    });
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Edit Processes Per Line')),
+      appBar: AppBar(title: Text('Edit Processes')),
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
           : Padding(
-              padding: const EdgeInsets.all(12.0), // Padding untuk seluruh layar
-              child: ListView(
-                children: _controllers.keys.map((line) {
-                  return Card(
-                    elevation: 3, // Efek shadow agar lebih menarik
-                    margin: EdgeInsets.only(bottom: 12), // Spasi antar card
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(10),
-                      child: Column(
-                        children: [
-                          // Header dengan Nama Line + Tombol Aksi
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              padding: EdgeInsets.all(8),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal, // Scroll secara horizontal
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: _controllers.keys.map((line) {
+                    return Container(
+                      width: 250, // Lebar setiap card agar tidak terlalu kecil
+                      margin: EdgeInsets.only(right: 12), // Jarak antar line
+                      child: Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                lineTitles[line]!,
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blueGrey[800],
-                                ),
-                              ),
+                              // Header dengan Nama Line + Tombol Aksi
                               Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  IconButton(
-                                    icon: Icon(Icons.add, color: Colors.green),
-                                    onPressed: () => addProcess(line),
+                                  Text(
+                                    lineTitles[line]!,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                  IconButton(
-                                    icon: Icon(Icons.save, color: Colors.blue),
-                                    onPressed: () => saveChangesPerLine(line),
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        icon: Icon(Icons.add, size: 18, color: Colors.green),
+                                        onPressed: () => addProcess(line),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(Icons.save, size: 18, color: Colors.blue),
+                                        onPressed: () => saveChangesPerLine(line),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
+                              Divider(),
+                              // List Item Process
+                              Expanded(
+                                child: ListView.builder(
+                                  shrinkWrap: true,
+                                  itemCount: _controllers[line]!.length,
+                                  itemBuilder: (context, index) {
+                                    TextEditingController controller =
+                                        _controllers[line]![index];
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 4),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              controller: controller,
+                                              decoration: InputDecoration(
+                                                labelText: "Process ${index + 1}",
+                                                border: OutlineInputBorder(
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                              ),
+                                            ),
+                                          ),
+                                          SizedBox(width: 6),
+                                          IconButton(
+                                            icon: Icon(Icons.delete, size: 18, color: Colors.red),
+                                            onPressed: () => deleteProcess(line, index),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
                             ],
                           ),
-                          Divider(), // Garis pemisah
-
-                          // List Item Process
-                          Column(
-                            children: _controllers[line]!.asMap().entries.map((entry) {
-                              int index = entry.key;
-                              TextEditingController controller = entry.value;
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 6), // Spasi antar TextField
-                                child: Row(
-                                  children: [
-                                    // Label Nomor Urut
-                                    Text(
-                                      "${index + 1}. ",
-                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                                    ),
-                                    Expanded(
-                                      child: TextField(
-                                        controller: controller,
-                                        decoration: InputDecoration(
-                                          labelText: "Process ${index + 1}",
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                        ),
-                                      ),
-                                    ),
-                                    SizedBox(width: 8), // Jarak kecil antara TextField dan tombol hapus
-                                    IconButton(
-                                      icon: Icon(Icons.delete, color: Colors.red),
-                                      onPressed: () => deleteProcess(line, index),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  );
-                }).toList(),
+                    );
+                  }).toList(),
+                ),
               ),
             ),
     );
