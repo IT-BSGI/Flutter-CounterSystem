@@ -1,1 +1,35 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"bsgi-counter-shirt","appId":"1:907203013942:android:9ad92bdd80139eb8a61797","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"bsgi-counter-shirt","configurations":{"android":"1:907203013942:android:9ad92bdd80139eb8a61797","web":"1:907203013942:web:d3e0809dba2e5e41a61797","windows":"1:907203013942:web:5b6a8a94057d34c6a61797"}}}}},"firestore":{"rules":"firestore.rules","indexes":"firestore.indexes.json"}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "bsgi-counter-shirt",
+          "appId": "1:907203013942:android:9ad92bdd80139eb8a61797",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "bsgi-counter-shirt",
+          "configurations": {
+            "android": "1:907203013942:android:9ad92bdd80139eb8a61797",
+            "web": "1:907203013942:web:d3e0809dba2e5e41a61797",
+            "windows": "1:907203013942:web:5b6a8a94057d34c6a61797"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}

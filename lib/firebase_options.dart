@@ -71,4 +71,5 @@ class DefaultFirebaseOptions {
     authDomain: 'bsgi-counter-shirt.firebaseapp.com',
     storageBucket: 'bsgi-counter-shirt.firebasestorage.app',
   );
+
 }
