@@ -1,3 +1,4 @@
+// Pastikan import tetap
 import 'package:flutter/material.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -17,6 +18,36 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   String selectedLine = "A";
   DateTime selectedDate = DateTime.now();
 
+  final List<String> timeSlots = [
+    "07:30 - 08:29",
+    "08:30 - 09:29",
+    "09:30 - 10:29",
+    "10:30 - 11:29",
+    "11:30 - 12:29",
+    "12:30 - 13:29",
+    "13:30 - 14:29",
+    "14:30 - 15:29",
+    "15:30 - 16:29",
+    "16:30~"
+  ];
+
+  final Map<String, String> timeRangeMap = {
+    "06:30": "07:30 - 08:29",
+    "07:30": "07:30 - 08:29",
+    "08:30": "08:30 - 09:29",
+    "09:30": "09:30 - 10:29",
+    "10:30": "10:30 - 11:29",
+    "11:30": "11:30 - 12:29",
+    "12:30": "12:30 - 13:29",
+    "13:30": "13:30 - 14:29",
+    "14:30": "14:30 - 15:29",
+    "15:30": "15:30 - 16:29",
+    "16:30": "16:30~",
+    "17:30": "16:30~",
+    "18:30": "16:30~",
+    "19:30": "16:30~",
+  };
+
   @override
   void initState() {
     super.initState();
@@ -34,17 +65,20 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     return snapshot.docs.map((doc) {
       String processName = doc.id;
       Map<String, dynamic> processData = {"process_name": processName};
+
       Map<String, dynamic>? timeData = doc.data() as Map<String, dynamic>?;
 
       if (timeData != null) {
-        for (String time in ["07:30", "08:30", "09:30", "10:30", "11:30", "13:30", "14:30", "15:30", "16:30"]) {
-          if (timeData.containsKey(time) && timeData[time] is Map) {
+        for (String rawTime in timeData.keys) {
+          String? mappedTime = timeRangeMap[rawTime];
+          if (mappedTime != null && timeData[rawTime] is Map) {
             for (int i = 1; i <= 5; i++) {
-              processData["${time}_$i"] = timeData[time]["$i"] ?? 0;
+              processData["${mappedTime}_$i"] = (processData["${mappedTime}_$i"] ?? 0) + (timeData[rawTime]["$i"] ?? 0);
             }
           }
         }
       }
+
       return processData;
     }).toList();
   }
@@ -55,8 +89,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
     List<Map<String, dynamic>> data = await fetchCounterData(selectedLine, formattedDate);
 
-    List<String> timeSlots = ["07:30", "08:30", "09:30", "10:30", "11:30", "13:30", "14:30", "15:30", "16:30"];
-
     columns = [
       PlutoColumn(
         title: "PROCESS",
@@ -65,9 +97,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         width: 120,
         titleTextAlign: PlutoColumnTextAlign.center,
         backgroundColor: Colors.blue.shade200,
-        enableColumnDrag: false, // Hilangkan ikon garis tiga
+        enableColumnDrag: false,
         enableContextMenu: false,
-        // enableDropToResize: false,
         enableSorting: false,
       ),
     ];
@@ -84,7 +115,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           titleTextAlign: PlutoColumnTextAlign.center,
           textAlign: PlutoColumnTextAlign.center,
           backgroundColor: Colors.blue.shade100,
-          enableColumnDrag: false, // Hilangkan ikon garis tiga
+          enableColumnDrag: false,
           enableContextMenu: false,
           enableDropToResize: false,
           enableSorting: false,
@@ -100,14 +131,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           titleTextAlign: PlutoColumnTextAlign.center,
           textAlign: PlutoColumnTextAlign.center,
           backgroundColor: Colors.yellow.shade200,
-          enableColumnDrag: false, // Hilangkan ikon garis tiga
+          enableColumnDrag: false,
           enableContextMenu: false,
           enableDropToResize: false,
           enableSorting: false,
           cellPadding: EdgeInsets.all(1.0),
           renderer: (rendererContext) {
             return Container(
-              color: Colors.yellow.shade100, // Warna untuk seluruh sel
+              color: Colors.yellow.shade100,
               alignment: Alignment.center,
               child: Text(rendererContext.cell.value.toString(),
                   style: TextStyle(fontWeight: FontWeight.bold)),
@@ -141,19 +172,19 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         titleTextAlign: PlutoColumnTextAlign.center,
         textAlign: PlutoColumnTextAlign.center,
         backgroundColor: Colors.orange.shade300,
-        enableColumnDrag: false, // Hilangkan ikon garis tiga
+        enableColumnDrag: false,
         enableContextMenu: false,
         enableDropToResize: false,
         enableSorting: false,
         cellPadding: EdgeInsets.all(1.0),
         renderer: (rendererContext) {
-            return Container(
-              color: Colors.orange.shade200, // Warna untuk seluruh sel
-              alignment: Alignment.center,
-              child: Text(rendererContext.cell.value.toString(),
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-            );
-          },
+          return Container(
+            color: Colors.orange.shade200,
+            alignment: Alignment.center,
+            child: Text(rendererContext.cell.value.toString(),
+                style: TextStyle(fontWeight: FontWeight.bold)),
+          );
+        },
       ),
     );
 
@@ -178,7 +209,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       }
 
       cells["grand_total"] = PlutoCell(value: grandTotal);
-
       return PlutoRow(cells: cells);
     }).toList();
 
@@ -221,28 +251,19 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 8,
-                offset: Offset(0, 4),
-              ),
-            ],
           ),
         ),
-        elevation: 4, // Memberikan efek shadow di bawah AppBar
+        elevation: 4,
         actions: [
-           // Menambah jarak dari sisi kanan sebelum tombol
           IconButton(
             icon: Icon(Icons.refresh, size: 26, color: Colors.white),
             tooltip: "Refresh Data",
             onPressed: () => loadData(),
-            splashRadius: 24, // Efek hover saat ditekan
+            splashRadius: 24,
           ),
           SizedBox(width: 16),
         ],
       ),
-
       body: Column(
         children: [
           Padding(
@@ -270,26 +291,19 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                       items: ["A", "B", "C", "D", "E"]
                           .map((line) => DropdownMenuItem(
                                 value: line,
-                                child: Text(
-                                  "Line $line",
-                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                                ),
+                                child: Text("Line $line"),
                               ))
                           .toList(),
                       onChanged: (value) {
                         setState(() => selectedLine = value!);
                         loadData();
                       },
-                      icon: Icon(Icons.arrow_drop_down, color: Colors.blue.shade600, size: 24),
+                      icon: Icon(Icons.arrow_drop_down, color: Colors.blue.shade600),
                       style: TextStyle(color: Colors.black),
-                      dropdownColor: Colors.white, 
-                      borderRadius: BorderRadius.circular(5), // Membuat sudut lebih halus
-                      menuMaxHeight: 250, // Membatasi tinggi dropdown agar tidak terlalu panjang
-                      menuWidth: 96,
+                      dropdownColor: Colors.white,
                     ),
                   ),
                 ),
-                
                 TextButton.icon(
                   icon: Icon(Icons.calendar_today, size: 18),
                   label: Text(DateFormat("yyyy-MM-dd").format(selectedDate)),
@@ -302,9 +316,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             child: isLoading
                 ? Center(child: CircularProgressIndicator())
                 : rows.isEmpty
-                    ? Center(child: Text("No Data Available", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)))
+                    ? Center(child: Text("No Data Available"))
                     : Padding(
-                        // padding: const EdgeInsets.all(4.0),
                         padding: EdgeInsets.only(left: 8.0, right: 4.0),
                         child: PlutoGrid(
                           columns: columns,
@@ -312,13 +325,12 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                           columnGroups: columnGroups,
                           configuration: PlutoGridConfiguration(
                             style: PlutoGridStyleConfig(
-                              gridBackgroundColor: Colors.white, // Warna background tabel
+                              gridBackgroundColor: Colors.white,
                               rowColor: Colors.blue.shade50,
                               borderColor: Colors.blue.shade800,
                               rowHeight: 30,
                               columnHeight: 30,
                               cellTextStyle: TextStyle(fontSize: 12),
-                              
                             ),
                           ),
                           mode: PlutoGridMode.readOnly,
