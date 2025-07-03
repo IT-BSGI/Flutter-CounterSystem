@@ -45,6 +45,8 @@ dependencies:
   path_provider: ^2.1.5
   firebase_auth: ^5.5.1
   shared_preferences: ^2.5.2
+  flutter_animate: ^4.1.1
+  file_saver: ^0.2.14
 
 dev_dependencies:
   flutter_test:

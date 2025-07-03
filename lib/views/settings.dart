@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class EditProcessesScreen extends StatefulWidget {
   @override
@@ -8,16 +9,19 @@ class EditProcessesScreen extends StatefulWidget {
 
 class _EditProcessesScreenState extends State<EditProcessesScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  Map<String, List<TextEditingController>> _controllers = {};
+  Map<String, List<TextEditingController>> _processControllers = {};
+  Map<String, List<TextEditingController>> _sequenceControllers = {};
   bool _isLoading = true;
-  ScrollController _scrollController = ScrollController(); // Controller untuk horizontal scroll
+  ScrollController _scrollController = ScrollController();
+  DateTime selectedDate = DateTime.now();
 
+  final List<String> lines = ["A", "B", "C", "D", "E"];
   final Map<String, String> lineTitles = {
-    "process_line_A": "Line A",
-    "process_line_B": "Line B",
-    "process_line_C": "Line C",
-    "process_line_D": "Line D",
-    "process_line_E": "Line E",
+    "A": "Line A",
+    "B": "Line B",
+    "C": "Line C",
+    "D": "Line D",
+    "E": "Line E",
   };
 
   @override
@@ -28,94 +32,237 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
   Future<void> fetchProcessLines() async {
     try {
-      DocumentSnapshot snapshot =
+      // 1. Fetch process names from basic_data
+      DocumentSnapshot processSnapshot = 
           await _firestore.collection('basic_data').doc('data_process').get();
 
-      if (!snapshot.exists) return;
+      if (!processSnapshot.exists) return;
 
-      Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
+      Map<String, dynamic> processData = processSnapshot.data() as Map<String, dynamic>;
 
-      List<String> orderedLines = [
-        "process_line_A",
-        "process_line_B",
-        "process_line_C",
-        "process_line_D",
-        "process_line_E"
-      ];
+      Map<String, List<TextEditingController>> processControllers = {};
+      Map<String, List<TextEditingController>> sequenceControllers = {};
 
-      Map<String, List<TextEditingController>> controllers = {};
+      // Format tanggal yang dipilih dan tanggal hari ini
+      String formattedSelectedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
+      String formattedToday = DateFormat("yyyy-MM-dd").format(DateTime.now());
 
-      for (String line in orderedLines) {
-        List<String> processes =
-            data[line] != null ? List<String>.from(data[line]) : [];
-        controllers[line] =
+      for (String line in lines) {
+        String lineKey = "process_line_$line";
+        List<String> processes = 
+            processData[lineKey] != null ? List<String>.from(processData[lineKey]) : [];
+        
+        processControllers[line] =
             processes.map((process) => TextEditingController(text: process)).toList();
+        sequenceControllers[line] =
+            processes.map((_) => TextEditingController()).toList();
+
+        // 2. Fetch sequence data from counter_sistem
+        DocumentReference kumitateRef = _firestore
+            .collection('counter_sistem')
+            .doc(formattedSelectedDate)
+            .collection(line)
+            .doc('Kumitate');
+
+        DocumentSnapshot sequenceSnapshot = await kumitateRef.get();
+        
+        if (sequenceSnapshot.exists) {
+          // Jika ada data untuk tanggal yang dipilih, gunakan itu
+          Map<String, dynamic>? sequenceData = sequenceSnapshot.data() as Map<String, dynamic>?;
+          
+          for (int i = 0; i < processes.length; i++) {
+            String processName = processes[i];
+            if (sequenceData?.containsKey(processName) ?? false) {
+              dynamic seqValue = sequenceData?[processName]?['sequence'];
+              if (seqValue != null) {
+                sequenceControllers[line]![i].text = seqValue.toString();
+              }
+            }
+          }
+        } else if (formattedSelectedDate != formattedToday) {
+          // Jika tidak ada data untuk tanggal yang dipilih DAN bukan hari ini,
+          // coba ambil data dari hari ini sebagai default
+          DocumentReference todayKumitateRef = _firestore
+              .collection('counter_sistem')
+              .doc(formattedToday)
+              .collection(line)
+              .doc('Kumitate');
+
+          DocumentSnapshot todaySequenceSnapshot = await todayKumitateRef.get();
+          
+          if (todaySequenceSnapshot.exists) {
+            Map<String, dynamic>? todaySequenceData = 
+                todaySequenceSnapshot.data() as Map<String, dynamic>?;
+            
+            for (int i = 0; i < processes.length; i++) {
+              String processName = processes[i];
+              if (todaySequenceData?.containsKey(processName) ?? false) {
+                dynamic seqValue = todaySequenceData?[processName]?['sequence'];
+                if (seqValue != null) {
+                  sequenceControllers[line]![i].text = seqValue.toString();
+                }
+              }
+            }
+          }
+        }
+
+        // Urutkan proses berdasarkan sequence
+        _sortProcessesBySequence(line, processControllers, sequenceControllers);
       }
 
       setState(() {
-        _controllers = controllers;
+        _processControllers = processControllers;
+        _sequenceControllers = sequenceControllers;
         _isLoading = false;
       });
     } catch (e) {
       print("Error fetching data: $e");
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _sortProcessesBySequence(
+    String line, 
+    Map<String, List<TextEditingController>> processControllers, 
+    Map<String, List<TextEditingController>> sequenceControllers
+  ) {
+    // Buat list sementara untuk sorting
+    List<Map<String, dynamic>> tempList = [];
+    for (int i = 0; i < processControllers[line]!.length; i++) {
+      tempList.add({
+        'process': processControllers[line]![i].text,
+        'sequence': int.tryParse(sequenceControllers[line]![i].text) ?? 0,
+      });
+    }
+
+    // Urutkan berdasarkan sequence
+    tempList.sort((a, b) => a['sequence'].compareTo(b['sequence']));
+
+    // Update controllers dengan urutan baru
+    for (int i = 0; i < tempList.length; i++) {
+      processControllers[line]![i].text = tempList[i]['process'];
+      sequenceControllers[line]![i].text = tempList[i]['sequence'].toString();
     }
   }
 
   Future<void> saveChangesPerLine(String line) async {
     try {
-      List<String> updatedProcesses = _controllers[line]!
-          .map((controller) => controller.text.trim())
-          .where((text) => text.isNotEmpty)
-          .toList();
+      // Mengumpulkan data proses dan sequence
+      List<Map<String, dynamic>> processData = [];
+      for (int i = 0; i < _processControllers[line]!.length; i++) {
+        String processName = _processControllers[line]![i].text.trim();
+        String sequenceText = _sequenceControllers[line]![i].text.trim();
+        int sequence = sequenceText.isEmpty ? 0 : int.tryParse(sequenceText) ?? 0;
+        
+        if (processName.isNotEmpty) {
+          processData.add({
+            'process': processName,
+            'sequence': sequence,
+          });
+        }
+      }
 
+      // Mengurutkan berdasarkan sequence
+      processData.sort((a, b) => a['sequence'].compareTo(b['sequence']));
+
+      // Menyimpan proses yang sudah diurutkan ke basic_data
+      List<String> updatedProcesses = processData.map((e) => e['process'] as String).toList();
       await _firestore.collection('basic_data').doc('data_process').update({
-        line: updatedProcesses,
+        "process_line_$line": updatedProcesses,
+      });
+
+      // Menyimpan sequence data ke counter_sistem
+      String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
+      DocumentReference kumitateRef = _firestore
+          .collection('counter_sistem')
+          .doc(formattedDate)
+          .collection(line)
+          .doc('Kumitate');
+
+      Map<String, dynamic> sequenceUpdates = {};
+      for (var item in processData) {
+        sequenceUpdates[item['process']] = {
+          'sequence': item['sequence'],
+        };
+      }
+
+      await kumitateRef.set(sequenceUpdates, SetOptions(merge: true));
+
+      // Memperbarui tampilan dengan data yang sudah diurutkan
+      setState(() {
+        for (int i = 0; i < processData.length; i++) {
+          _processControllers[line]![i].text = processData[i]['process'];
+          _sequenceControllers[line]![i].text = processData[i]['sequence'].toString();
+        }
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("${lineTitles[line]} berhasil disimpan!")),
+        SnackBar(content: Text("${lineTitles[line]} berhasil disimpan dan diurutkan!")),
       );
     } catch (e) {
-      print("Error updating data for $line: $e");
+      print("Error saving data: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Gagal menyimpan ${lineTitles[line]}")),
+        SnackBar(content: Text("Gagal menyimpan ${lineTitles[line]}: ${e.toString()}")),
       );
     }
   }
 
   void addProcess(String line) {
     setState(() {
-      _controllers[line]!.add(TextEditingController(text: ""));
+      _processControllers[line]!.add(TextEditingController(text: ""));
+      _sequenceControllers[line]!.add(TextEditingController(text: "0"));
     });
   }
 
   void deleteProcess(String line, int index) {
     setState(() {
-      _controllers[line]![index].dispose();
-      _controllers[line]!.removeAt(index);
+      _processControllers[line]![index].dispose();
+      _processControllers[line]!.removeAt(index);
+      _sequenceControllers[line]![index].dispose();
+      _sequenceControllers[line]!.removeAt(index);
     });
+  }
+
+  Future<void> selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2023),
+      lastDate: DateTime.now().add(Duration(days: 365)),
+    );
+    if (picked != null && picked != selectedDate) {
+      setState(() {
+        selectedDate = picked;
+      });
+      await fetchProcessLines();
+    }
   }
 
   @override
   void dispose() {
-    _controllers.forEach((key, controllers) {
+    _processControllers.forEach((_, controllers) {
       for (var controller in controllers) {
         controller.dispose();
       }
     });
-    _scrollController.dispose(); // Dispose scroll controller
+    _sequenceControllers.forEach((_, controllers) {
+      for (var controller in controllers) {
+        controller.dispose();
+      }
+    });
+    _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    double cardWidth = 350; // Lebar card
-    double cardHeight = 400; // Tinggi card
+    double cardWidth = 350;
 
     return Scaffold(
       backgroundColor: Colors.blue.shade100,
       appBar: AppBar(
-        title: Text('Edit Processes',
+        title: Text(
+          'Edit Processes',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
@@ -123,19 +270,44 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
             color: Colors.white,
           ),
         ),
-        
-        
-        backgroundColor: Colors.blue.shade600,
+        centerTitle: true,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.blue.shade400, Colors.blueAccent.shade700],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        elevation: 4,
+        actions: [
+          TextButton(
+            onPressed: () => selectDate(context),
+            child: Row(
+              children: [
+                Icon(Icons.calendar_today, size: 16, color: Colors.white),
+                SizedBox(width: 4),
+                Text(
+                  DateFormat('yyyy-MM-dd').format(selectedDate),
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.refresh, size: 26, color: Colors.white),
+            onPressed: fetchProcessLines,
+          ),
+        ],
       ),
-        
       body: GestureDetector(
         onHorizontalDragUpdate: (details) {
           _scrollController.jumpTo(_scrollController.offset - details.primaryDelta!);
-        },
-        onVerticalDragUpdate: (details) {
-          if (details.primaryDelta! > 10) {
-            fetchProcessLines(); // Refresh data saat geser ke bawah
-          }
         },
         child: _isLoading
             ? Center(child: CircularProgressIndicator())
@@ -146,12 +318,10 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                   controller: _scrollController,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: _controllers.keys.map((line) {
+                    children: lines.map((line) {
                       return Container(
-                        width: cardWidth, // Lebar card
-                        // height: cardHeight, // Tinggi card
-                        margin: EdgeInsets.all(8), // Jarak antar line
+                        width: cardWidth,
+                        margin: EdgeInsets.all(8),
                         child: Card(
                           color: Colors.blue.shade50,
                           elevation: 2,
@@ -163,7 +333,6 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Header dengan Nama Line + Tombol Aksi
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
@@ -189,28 +358,42 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                                   ],
                                 ),
                                 Divider(),
-                                // List Item Process
                                 Expanded(
                                   child: ListView.builder(
                                     shrinkWrap: true,
-                                    itemCount: _controllers[line]!.length,
+                                    itemCount: _processControllers[line]?.length ?? 0,
                                     itemBuilder: (context, index) {
-                                      TextEditingController controller =
-                                          _controllers[line]![index];
                                       return Padding(
                                         padding: const EdgeInsets.symmetric(vertical: 4),
                                         child: Row(
                                           children: [
                                             Expanded(
+                                              flex: 3,
                                               child: TextField(
-                                                controller: controller,
+                                                controller: _processControllers[line]![index],
                                                 decoration: InputDecoration(
                                                   labelText: "Process ${index + 1}",
                                                   border: OutlineInputBorder(
                                                     borderRadius: BorderRadius.circular(6),
                                                   ),
-                                                  contentPadding:
-                                                      EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                                  contentPadding: EdgeInsets.symmetric(
+                                                      horizontal: 8, vertical: 6),
+                                                ),
+                                              ),
+                                            ),
+                                            SizedBox(width: 8),
+                                            Container(
+                                              width: 70,
+                                              child: TextField(
+                                                controller: _sequenceControllers[line]![index],
+                                                keyboardType: TextInputType.number,
+                                                decoration: InputDecoration(
+                                                  labelText: "Seq",
+                                                  border: OutlineInputBorder(
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  contentPadding: EdgeInsets.symmetric(
+                                                      horizontal: 8, vertical: 6),
                                                 ),
                                               ),
                                             ),
