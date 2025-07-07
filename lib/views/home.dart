@@ -37,20 +37,15 @@ class _HomePageState extends State<HomePage> {
   ];
 
   final Map<String, String> timeRangeMap = {
-    "06:30": "07:30 - 08:29",
     "07:30": "07:30 - 08:29",
     "08:30": "08:30 - 09:29",
     "09:30": "09:30 - 10:29",
     "10:30": "10:30 - 11:29",
-    "11:30": "10:30 - 11:29",
     "12:30": "12:30 - 13:29",
     "13:30": "13:30 - 14:29",
     "14:30": "14:30 - 15:29",
     "15:30": "15:30 - 16:29",
     "16:30": "16:30~",
-    "17:30": "16:30~",
-    "18:30": "16:30~",
-    "19:30": "16:30~",
   };
 
   @override
@@ -576,8 +571,13 @@ class _HomePageState extends State<HomePage> {
       
       if (target != null) {
         // Calculate target value (linear progression)
-        double targetValue = (target * (i+1) / timeSlots.length).toDouble();
-        targetSpots.add(FlSpot((i+1).toDouble(), targetValue));
+        // Only show target up to 15:30 - 16:29 (8th time slot)
+        if (i < 7) { // 0-6 index is up to 15:30 - 16:29
+          double targetValue = (target * (i+1) / 8).toDouble(); // Divide by 8 for 8 hours
+          targetSpots.add(FlSpot((i+1).toDouble(), targetValue));
+        } else if (i == 7) { // Last point for target line
+          targetSpots.add(FlSpot((i+1).toDouble(), target.toDouble()));
+        }
       }
       
       if (value > maxY) maxY = value.toDouble();
@@ -671,6 +671,7 @@ class _HomePageState extends State<HomePage> {
                             sideTitles: SideTitles(
                               showTitles: true,
                               getTitlesWidget: (value, _) {
+                                if (value != value.toInt()) return SizedBox();
                                 if (value.toInt() < 1 || value.toInt() > timeSlots.length) return SizedBox();
                                 String timeLabel = timeSlots[value.toInt() - 1].split(' ')[0];
                                 return Padding(
@@ -680,10 +681,12 @@ class _HomePageState extends State<HomePage> {
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Colors.blue.shade700,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                 );
                               },
+                              interval: 1,
                               reservedSize: 30,
                             ),
                           ),

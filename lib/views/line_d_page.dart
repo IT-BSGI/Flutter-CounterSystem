@@ -15,14 +15,14 @@ class LineDPage extends StatefulWidget {
 class _LineDPageState extends State<LineDPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   int? _plan;
-  int? _actual;
+  int _actual = 0;
   double _currentTarget = 0.0;
   int _displayedTarget = 0;
   bool _isLoading = true;
   late Timer _timer;
   int _lastStableTarget = 0;
   StreamSubscription<DocumentSnapshot>? _planSubscription;
-  StreamSubscription<DocumentSnapshot>? _kumitateSubscription;
+  StreamSubscription<QuerySnapshot>? _processSubscription;
 
   // Work hours configuration
   final _startWorkTime = TimeOfDay(hour: 7, minute: 30);
@@ -46,13 +46,14 @@ class _LineDPageState extends State<LineDPage> {
   void dispose() {
     _timer.cancel();
     _planSubscription?.cancel();
-    _kumitateSubscription?.cancel();
+    _processSubscription?.cancel();
     super.dispose();
   }
 
   void _setupStreams() {
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.date);
     
+    // Setup stream for plan data
     _planSubscription = _firestore.collection('counter_sistem')
       .doc(dateStr)
       .snapshots()
@@ -75,47 +76,48 @@ class _LineDPageState extends State<LineDPage> {
         });
       });
 
-    _kumitateSubscription = _firestore.collection('counter_sistem')
+    // Setup stream for actual data from Process collection
+    _processSubscription = _firestore.collection('counter_sistem')
       .doc(dateStr)
       .collection('D')
       .doc('Kumitate')
+      .collection('Process')
       .snapshots()
-      .listen((DocumentSnapshot snapshot) {
-        if (snapshot.exists) {
-          final data = snapshot.data() as Map<String, dynamic>?;
-          if (data != null) {
-            int maxSequence = 0;
-            int lastProcessTotal = 0;
+      .listen((QuerySnapshot snapshot) {
+        if (snapshot.docs.isNotEmpty) {
+          int maxSequence = 0;
+          int lastProcessTotal = 0;
+          
+          // Find process with highest sequence number
+          for (var doc in snapshot.docs) {
+            final processData = doc.data() as Map<String, dynamic>;
+            final sequence = (processData['sequence'] as int?) ?? 0;
             
-            data.forEach((key, value) {
-              if (value is Map && value.containsKey('sequence')) {
-                int sequence = value['sequence'] as int;
-                if (sequence > maxSequence) {
-                  maxSequence = sequence;
-                  int total = 0;
-                  value.forEach((timeKey, timeValue) {
-                    if (timeValue is Map && timeKey != 'sequence') {
-                      timeValue.forEach((lineKey, lineValue) {
-                        total += (lineValue as int? ?? 0);
-                      });
-                    }
+            if (sequence >= maxSequence) {
+              maxSequence = sequence;
+              lastProcessTotal = 0;
+              
+              // Calculate total for this process
+              processData.forEach((key, value) {
+                if (key != 'sequence' && value is Map<String, dynamic>) {
+                  value.forEach((lineKey, lineValue) {
+                    lastProcessTotal += (lineValue as int? ?? 0);
                   });
-                  lastProcessTotal = total;
                 }
-              }
-            });
-            
-            setState(() {
-              _actual = lastProcessTotal;
-            });
+              });
+            }
           }
+          
+          setState(() {
+            _actual = lastProcessTotal;
+          });
         } else {
           setState(() {
             _actual = 0;
           });
         }
       }, onError: (error) {
-        debugPrint('Error listening to kumitate stream: $error');
+        debugPrint('Error listening to process stream: $error');
         setState(() {
           _actual = 0;
         });
@@ -228,7 +230,7 @@ class _LineDPageState extends State<LineDPage> {
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: () {
               _planSubscription?.cancel();
-              _kumitateSubscription?.cancel();
+              _processSubscription?.cancel();
               _setupStreams();
             },
           ),
@@ -236,7 +238,7 @@ class _LineDPageState extends State<LineDPage> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : (_plan == null || _actual == null)
+          : (_plan == null)
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -247,7 +249,7 @@ class _LineDPageState extends State<LineDPage> {
                       ElevatedButton(
                         onPressed: () {
                           _planSubscription?.cancel();
-                          _kumitateSubscription?.cancel();
+                          _processSubscription?.cancel();
                           _setupStreams();
                         },
                         child: const Text('Retry'),
@@ -281,7 +283,7 @@ class _LineDPageState extends State<LineDPage> {
                           const SizedBox(height: 0),
                           _buildMetricRow(
                             label: 'ACTUAL',
-                            value: _actual?.toString() ?? '-',
+                            value: _actual.toString(),
                             fontSize: fontSize,
                           ),
                         ],

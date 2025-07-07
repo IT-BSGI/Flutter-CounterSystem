@@ -119,7 +119,6 @@ class _TargetPageState extends State<TargetPage> {
         {
           'target_$line': targetValue,
           'date': DateFormat('yyyy-MM-dd').format(_selectedDate),
-          'last_updated': FieldValue.serverTimestamp(), 
         },
         SetOptions(merge: true),
       );
