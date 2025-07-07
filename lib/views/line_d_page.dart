@@ -198,13 +198,21 @@ class _LineDPageState extends State<LineDPage> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final fontSize = screenWidth < 600 ? 60.0 : 
+                    screenWidth < 900 ? 100.0 : 
+                    175.0;
+    final horizontalPadding = screenWidth < 600 ? 16.0 : 
+                            screenWidth < 900 ? 50.0 : 
+                            150.0;
+
     return Scaffold(
       backgroundColor: Colors.blue.shade100,
       appBar: AppBar(
         title: Text(
           'Line D Production - ${DateFormat('yyyy-MM-dd').format(widget.date)}',
-          style: const TextStyle(
-            fontSize: 20,
+          style: TextStyle(
+            fontSize: screenWidth < 600 ? 16 : 20,
             fontWeight: FontWeight.bold,
             color: Colors.white,
           ),
@@ -233,7 +241,8 @@ class _LineDPageState extends State<LineDPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text('Failed to load data', style: TextStyle(fontSize: 24)),
+                      Text('Failed to load data', 
+                          style: TextStyle(fontSize: screenWidth < 600 ? 18 : 24)),
                       const SizedBox(height: 20),
                       ElevatedButton(
                         onPressed: () {
@@ -251,9 +260,9 @@ class _LineDPageState extends State<LineDPage> {
                   child: Card(
                     elevation: 8,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
+                      padding: EdgeInsets.symmetric(
                         vertical: 5,   
-                        horizontal: 150 
+                        horizontal: horizontalPadding,
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -261,16 +270,19 @@ class _LineDPageState extends State<LineDPage> {
                           _buildMetricRow(
                             label: 'PLAN',
                             value: _plan?.toString() ?? '-',
+                            fontSize: fontSize,
                           ),
                           const SizedBox(height: 0),
                           _buildMetricRow(
                             label: 'TARGET',
                             value: _displayedTarget.toString(),
+                            fontSize: fontSize,
                           ).animate().fadeIn(duration: 300.ms),
                           const SizedBox(height: 0),
                           _buildMetricRow(
                             label: 'ACTUAL',
                             value: _actual?.toString() ?? '-',
+                            fontSize: fontSize,
                           ),
                         ],
                       ),
@@ -283,6 +295,7 @@ class _LineDPageState extends State<LineDPage> {
   Widget _buildMetricRow({
     required String label,
     required String value,
+    required double fontSize,
   }) {
     return Container(
       padding: EdgeInsets.zero,
@@ -293,8 +306,8 @@ class _LineDPageState extends State<LineDPage> {
         children: [
           Text(
             '$label:', 
-            style: const TextStyle(
-              fontSize: 175, 
+            style: TextStyle(
+              fontSize: fontSize, 
               color: Colors.black,
               fontWeight: FontWeight.bold,
               height: 1.1,
@@ -302,8 +315,8 @@ class _LineDPageState extends State<LineDPage> {
           ),
           Text(
             value,
-            style: const TextStyle(
-              fontSize: 175,
+            style: TextStyle(
+              fontSize: fontSize,
               fontWeight: FontWeight.bold,
               color: Colors.red,
               height: 1.1,

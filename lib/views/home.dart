@@ -25,7 +25,6 @@ class _HomePageState extends State<HomePage> {
   Map<String, StreamSubscription> _streamSubscriptions = {};
 
   final List<String> timeSlots = [
-    "00:00",
     "07:30 - 08:29",
     "08:30 - 09:29",
     "09:30 - 10:29",
@@ -38,15 +37,20 @@ class _HomePageState extends State<HomePage> {
   ];
 
   final Map<String, String> timeRangeMap = {
+    "06:30": "07:30 - 08:29",
     "07:30": "07:30 - 08:29",
     "08:30": "08:30 - 09:29",
     "09:30": "09:30 - 10:29",
     "10:30": "10:30 - 11:29",
+    "11:30": "10:30 - 11:29",
     "12:30": "12:30 - 13:29",
     "13:30": "13:30 - 14:29",
     "14:30": "14:30 - 15:29",
     "15:30": "15:30 - 16:29",
     "16:30": "16:30~",
+    "17:30": "16:30~",
+    "18:30": "16:30~",
+    "19:30": "16:30~",
   };
 
   @override
@@ -237,73 +241,70 @@ class _HomePageState extends State<HomePage> {
 
   Future<List<Map<String, dynamic>>> fetchLineData(String line, String date) async {
     try {
-      FirebaseFirestore firestore = FirebaseFirestore.instance;
-      DocumentReference kumitateRef = firestore
+      final processRef = FirebaseFirestore.instance
           .collection('counter_sistem')
           .doc(date)
           .collection(line)
-          .doc('Kumitate');
+          .doc('Kumitate')
+          .collection('Process');
 
-      DocumentSnapshot snapshot = await kumitateRef.get();
+      final snapshot = await processRef.get();
 
-      if (!snapshot.exists) {
-        print("No Kumitate document found for Line $line on $date");
+      if (snapshot.docs.isEmpty) {
+        print('No process documents found for Line $line on $date');
         return [];
       }
 
-      Map<String, dynamic>? data = snapshot.data() as Map<String, dynamic>?;
-      if (data == null) return [];
-
       List<Map<String, dynamic>> processList = [];
 
-      data.forEach((processName, processData) {
-        if (processData is Map) {
-          Map<String, int> cumulativeData = {};
+      for (var doc in snapshot.docs) {
+        final processData = doc.data();
+        final processMap = <String, dynamic>{
+          "process_name": doc.id.replaceAll('_', ' '),
+          "sequence": (processData['sequence'] as num?)?.toInt() ?? 0,
+          "raw_data": processData,
+        };
 
-          // Initialize all time slots to 0
-          for (String timeSlot in timeSlots) {
-            cumulativeData[timeSlot] = 0;
-          }
-
-          processData.forEach((key, value) {
-            if (key != 'sequence' && value is Map) {
-              String? mappedTime = timeRangeMap[key];
-              if (mappedTime != null) {
-                int slotTotal = 0;
-                for (int i = 1; i <= 5; i++) {
-                  slotTotal += ((value["$i"] ?? 0) as num).toInt();
-                }
-                cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
-              }
-            }
-          });
-
-          // Create final cumulative data
-          Map<String, int> finalCumulative = {};
-          int currentCumulative = 0;
-          
-          for (String time in timeSlots) {
-            if (time != "00:00") {
-              currentCumulative += (cumulativeData[time] ?? 0);
-            }
-            finalCumulative[time] = time == "00:00" ? 0 : currentCumulative;
-          }
-
-          processList.add({
-            'process_name': processName.replaceAll('_', ' '),
-            'sequence': (processData['sequence'] ?? 0) as int,
-            'cumulative': finalCumulative,
-            'raw_data': processData,
-          });
+        // Initialize all time slots with 0
+        Map<String, int> cumulativeData = {};
+        for (final time in timeSlots) {
+          cumulativeData[time] = 0;
         }
-      });
 
-      // Sort by sequence
-      processList.sort((a, b) => (a['sequence'] ?? 0).compareTo(b['sequence'] ?? 0));
+        // Process each time entry in the document
+        processData.forEach((key, value) {
+          if (key != 'sequence' && value is Map<String, dynamic>) {
+            final timeKey = key;
+            final mappedTime = timeRangeMap[timeKey];
+            
+            if (mappedTime != null) {
+              int slotTotal = 0;
+              for (int i = 1; i <= 5; i++) {
+                slotTotal += ((value['$i'] ?? 0) as num).toInt();
+              }
+              cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
+            }
+          }
+        });
 
+        // Create final cumulative data
+        Map<String, int> finalCumulative = {};
+        int currentCumulative = 0;
+        
+        for (String time in timeSlots) {
+          currentCumulative += (cumulativeData[time] ?? 0);
+          finalCumulative[time] = currentCumulative;
+        }
+
+        processMap['cumulative'] = finalCumulative;
+        processList.add(processMap);
+      }
+
+      // Sort by sequence number
+      processList.sort((a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
       return processList;
     } catch (e) {
-      print("Error fetching data for Line $line: $e");
+      print('Error fetching counter data: $e');
       return [];
     }
   }
@@ -318,10 +319,11 @@ class _HomePageState extends State<HomePage> {
           .doc(date)
           .collection(line)
           .doc('Kumitate')
+          .collection('Process')
           .snapshots();
 
       _streamSubscriptions[line] = stream.listen((snapshot) async {
-        if (snapshot.exists && mounted) {
+        if (snapshot.docs.isNotEmpty && mounted) {
           String currentLine = _pausedLine ?? lineData.keys.elementAt(_currentPage);
           
           if (line == currentLine || _isSlideshowRunning) {
@@ -338,54 +340,54 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _processSnapshot(DocumentSnapshot snapshot) async {
-    Map<String, dynamic>? data = snapshot.data() as Map<String, dynamic>?;
-    if (data == null) return [];
-
+  Future<List<Map<String, dynamic>>> _processSnapshot(QuerySnapshot snapshot) async {
     List<Map<String, dynamic>> processList = [];
 
-    data.forEach((processName, processData) {
-      if (processData is Map) {
-        Map<String, int> cumulativeData = {};
+    for (var doc in snapshot.docs) {
+      final processData = doc.data() as Map<String, dynamic>;
+      final processMap = <String, dynamic>{
+        "process_name": doc.id.replaceAll('_', ' '),
+        "sequence": (processData['sequence'] as num?)?.toInt() ?? 0,
+        "raw_data": processData,
+      };
 
-        for (String timeSlot in timeSlots) {
-          cumulativeData[timeSlot] = 0;
-        }
-
-        processData.forEach((key, value) {
-          if (key != 'sequence' && value is Map) {
-            String? mappedTime = timeRangeMap[key];
-            if (mappedTime != null) {
-              int slotTotal = 0;
-              for (int i = 1; i <= 5; i++) {
-                slotTotal += ((value["$i"] ?? 0) as num).toInt();
-              }
-              cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
-            }
-          }
-        });
-
-        // Create final cumulative data
-        Map<String, int> finalCumulative = {};
-        int currentCumulative = 0;
-        
-        for (String time in timeSlots) {
-          if (time != "00:00") {
-            currentCumulative += (cumulativeData[time] ?? 0);
-          }
-          finalCumulative[time] = time == "00:00" ? 0 : currentCumulative;
-        }
-
-        processList.add({
-          'process_name': processName.replaceAll('_', ' '),
-          'sequence': (processData['sequence'] ?? 0) as int,
-          'cumulative': finalCumulative,
-          'raw_data': processData,
-        });
+      // Initialize all time slots with 0
+      Map<String, int> cumulativeData = {};
+      for (final time in timeSlots) {
+        cumulativeData[time] = 0;
       }
-    });
 
-    processList.sort((a, b) => (a['sequence'] ?? 0).compareTo(b['sequence'] ?? 0));
+      // Process each time entry in the document
+      processData.forEach((key, value) {
+        if (key != 'sequence' && value is Map<String, dynamic>) {
+          final timeKey = key;
+          final mappedTime = timeRangeMap[timeKey];
+          
+          if (mappedTime != null) {
+            int slotTotal = 0;
+            for (int i = 1; i <= 5; i++) {
+              slotTotal += ((value['$i'] ?? 0) as num).toInt();
+            }
+            cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
+          }
+        }
+      });
+
+      // Create final cumulative data
+      Map<String, int> finalCumulative = {};
+      int currentCumulative = 0;
+      
+      for (String time in timeSlots) {
+        currentCumulative += (cumulativeData[time] ?? 0);
+        finalCumulative[time] = currentCumulative;
+      }
+
+      processMap['cumulative'] = finalCumulative;
+      processList.add(processMap);
+    }
+
+    // Sort by sequence number
+    processList.sort((a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
     return processList;
   }
 
@@ -558,38 +560,28 @@ class _HomePageState extends State<HomePage> {
 
     List<FlSpot> spots = [];
     List<FlSpot> targetSpots = [];
-    int index = 0;
     double maxY = 0;
 
-    // Hanya tambahkan titik 00:00 jika tidak ada data lain di index 0
-    if (timeSlots.isNotEmpty) {
-      spots.add(FlSpot(0, 0)); // Titik awal di 00:00 dengan nilai 0
-      if (target != null) {
-        targetSpots.add(FlSpot(0, 0));
-      }
-      index++; // Langsung ke index berikutnya
+    // Add initial spot at 0
+    spots.add(FlSpot(0, 0));
+    if (target != null) {
+      targetSpots.add(FlSpot(0, 0));
     }
 
-    // Hitung jumlah time slot yang valid (hingga 15:30-16:29)
-    int validTimeSlotsCount = timeSlots.indexWhere((slot) => slot == "15:30 - 16:29") + 1;
-    if (validTimeSlotsCount <= 0) validTimeSlotsCount = timeSlots.length;
-
-    // Mulai dari index 1 untuk melewati 00:00
-    for (String time in timeSlots.skip(1)) {
+    // Add spots for each time slot
+    for (int i = 0; i < timeSlots.length; i++) {
+      String time = timeSlots[i];
       int value = data[time] ?? 0;
-      spots.add(FlSpot(index.toDouble(), value.toDouble()));
+      spots.add(FlSpot((i+1).toDouble(), value.toDouble()));
       
       if (target != null) {
-        // Hanya tambahkan target spot jika masih dalam range waktu yang valid
-        if (index < validTimeSlotsCount) {
-          double targetValue = (target * index / (validTimeSlotsCount - 1));
-          targetSpots.add(FlSpot(index.toDouble(), targetValue));
-        }
+        // Calculate target value (linear progression)
+        double targetValue = (target * (i+1) / timeSlots.length).toDouble();
+        targetSpots.add(FlSpot((i+1).toDouble(), targetValue));
       }
       
       if (value > maxY) maxY = value.toDouble();
       if (target != null && target > maxY) maxY = target.toDouble();
-      index++;
     }
 
     if (maxY == 0) maxY = 10;
@@ -624,7 +616,10 @@ class _HomePageState extends State<HomePage> {
                             getTooltipItems: (List<LineBarSpot> touchedSpots) {
                               return touchedSpots.map((spot) {
                                 final isTarget = spot.barIndex == 1;
-                                final timeSlot = timeSlots[spot.x.toInt()];
+                                final timeIndex = spot.x.toInt() - 1;
+                                final timeSlot = timeIndex >= 0 && timeIndex < timeSlots.length 
+                                    ? timeSlots[timeIndex] 
+                                    : 'Start';
                                 
                                 String? originalTimeKey;
                                 timeRangeMap.forEach((key, value) {
@@ -676,10 +671,8 @@ class _HomePageState extends State<HomePage> {
                             sideTitles: SideTitles(
                               showTitles: true,
                               getTitlesWidget: (value, _) {
-                                if (value.toInt() >= timeSlots.length) return SizedBox();
-                                String timeLabel = value.toInt() == 0 
-                                    ? "00:00" 
-                                    : timeSlots[value.toInt()].split(' ')[0];
+                                if (value.toInt() < 1 || value.toInt() > timeSlots.length) return SizedBox();
+                                String timeLabel = timeSlots[value.toInt() - 1].split(' ')[0];
                                 return Padding(
                                   padding: const EdgeInsets.only(top: 8.0),
                                   child: Text(
@@ -723,7 +716,7 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                         minX: 0,
-                        maxX: (timeSlots.length - 1).toDouble(),
+                        maxX: timeSlots.length.toDouble(),
                         minY: 0,
                         maxY: maxY * 1.1,
                         lineBarsData: [

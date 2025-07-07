@@ -27,7 +27,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
   final List<String> timeSlots = [
     "07:30 - 08:29",
-    "08:30 - 09:29",
+    "08:30 - 09:29", 
     "09:30 - 10:29",
     "10:30 - 11:29",
     "12:30 - 13:29",
@@ -71,17 +71,18 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       final doc = await docRef.get();
       if (doc.exists) {
         setState(() {
-          dailyTarget = doc.data()?['target_$selectedLine'] as int?;
+          final target = doc.data()?['target_$selectedLine'];
+          dailyTarget = target is int ? target : target?.toInt();
           if (dailyTarget != null) {
             hourlyTargets = {
-              '07:30 - 08:29': (dailyTarget! / 8).round(),
-              '08:30 - 09:29': (dailyTarget! / 8).round(),
-              '09:30 - 10:29': (dailyTarget! / 8).round(),
-              '10:30 - 11:29': (dailyTarget! / 8).round(),
-              '12:30 - 13:29': (dailyTarget! / 8).round(),
-              '13:30 - 14:29': (dailyTarget! / 8).round(),
-              '14:30 - 15:29': (dailyTarget! / 8).round(),
-              '15:30 - 16:29': (dailyTarget! / 8).round(),
+              '07:30 - 08:29': (dailyTarget! ~/ 8),
+              '08:30 - 09:29': (dailyTarget! ~/ 8),
+              '09:30 - 10:29': (dailyTarget! ~/ 8),
+              '10:30 - 11:29': (dailyTarget! ~/ 8),
+              '12:30 - 13:29': (dailyTarget! ~/ 8),
+              '13:30 - 14:29': (dailyTarget! ~/ 8),
+              '14:30 - 15:29': (dailyTarget! ~/ 8),
+              '15:30 - 16:29': (dailyTarget! ~/ 8),
               '16:30~': 0,
             };
           }
@@ -95,36 +96,48 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   }
 
   Future<List<Map<String, dynamic>>> fetchCounterData(String date, String line) async {
-    FirebaseFirestore firestore = FirebaseFirestore.instance;
-    DocumentReference kumitateRef = firestore
-        .collection('counter_sistem')
-        .doc(date)
-        .collection(line)
-        .doc('Kumitate');
+    try {
+      final processRef = FirebaseFirestore.instance
+          .collection('counter_sistem')
+          .doc(date)
+          .collection(line)
+          .doc('Kumitate')
+          .collection('Process');
 
-    DocumentSnapshot snapshot = await kumitateRef.get();
+      final snapshot = await processRef.get();
 
-    if (!snapshot.exists) return [];
+      if (snapshot.docs.isEmpty) {
+        print('No process documents found for Line $line on $date');
+        return [];
+      }
 
-    Map<String, dynamic>? data = snapshot.data() as Map<String, dynamic>?;
-    if (data == null) return [];
+      List<Map<String, dynamic>> processList = [];
 
-    List<Map<String, dynamic>> processList = [];
-
-    data.forEach((processName, processData) {
-      if (processData is Map) {
-        Map<String, dynamic> processMap = {
-          "process_name": processName.replaceAll('_', ' '),
-          "sequence": (processData['sequence'] ?? 0) as int,
+      for (var doc in snapshot.docs) {
+        final processData = doc.data();
+        final processMap = <String, dynamic>{
+          "process_name": doc.id.replaceAll('_', ' '),
+          "sequence": (processData['sequence'] as num?)?.toInt() ?? 0,
         };
 
+        // Initialize all time slots with 0
+        for (final time in timeSlots) {
+          for (int i = 1; i <= 5; i++) {
+            processMap["${time}_$i"] = 0;
+          }
+        }
+
+        // Process each time entry in the document
         processData.forEach((key, value) {
-          if (key != 'sequence' && value is Map) {
-            String? mappedTime = timeRangeMap[key];
+          if (key != 'sequence' && value is Map<String, dynamic>) {
+            final timeKey = key;
+            final mappedTime = timeRangeMap[timeKey];
+            
             if (mappedTime != null) {
               for (int i = 1; i <= 5; i++) {
-                processMap["${mappedTime}_$i"] = 
-                    (processMap["${mappedTime}_$i"] ?? 0) + (value["$i"] ?? 0);
+                final count = (value['$i'] as num?)?.toInt() ?? 0;
+                // Menjumlahkan nilai untuk slot waktu yang sama
+                processMap["${mappedTime}_$i"] = (processMap["${mappedTime}_$i"] as int) + count;
               }
             }
           }
@@ -132,25 +145,39 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
         processList.add(processMap);
       }
-    });
 
-    processList.sort((a, b) => (a['sequence'] ?? 0).compareTo(b['sequence'] ?? 0));
-    return processList;
+      // Sort by sequence number
+      processList.sort((a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
+      return processList;
+    } catch (e) {
+      print('Error fetching counter data: $e');
+      return [];
+    }
   }
 
   Future<void> loadData() async {
     setState(() => isLoading = true);
+    print('Loading data for Line $selectedLine on ${DateFormat('yyyy-MM-dd').format(selectedDate)}');
 
-    String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
+    final formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
     originalData = await fetchCounterData(formattedDate, selectedLine);
-    List<Map<String, dynamic>> data = originalData;
 
+    if (originalData.isEmpty) {
+      print('No data available after fetching');
+      setState(() {
+        isLoading = false;
+        rows = [];
+      });
+      return;
+    }
+
+    // Build columns
     columns = [
       PlutoColumn(
         title: "PROCESS",
         field: "process_name",
         type: PlutoColumnType.text(),
-        width: 190,
+        width: 230,
         titleTextAlign: PlutoColumnTextAlign.center,
         backgroundColor: Colors.blue.shade300,
         enableColumnDrag: false,
@@ -189,7 +216,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
     columnGroups = [];
 
-    for (String time in timeSlots) {
+    // Add columns for each time slot
+    for (final time in timeSlots) {
+      // Columns for each line (1-5)
       for (int i = 1; i <= 5; i++) {
         columns.add(PlutoColumn(
           title: "$i",
@@ -207,6 +236,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         ));
       }
 
+      // Total column for the time slot
       columns.add(
         PlutoColumn(
           title: "Total",
@@ -243,6 +273,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         ),
       );
 
+      // Column group for the time slot
       columnGroups.add(
         PlutoColumnGroup(
           title: time,
@@ -259,6 +290,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       );
     }
 
+    // Grand total column
     columns.add(
       PlutoColumn(
         title: "GRAND TOTAL",
@@ -295,24 +327,26 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       ),
     );
 
-    rows = data.map((entry) {
-      Map<String, PlutoCell> cells = {
+    // Build rows from the data
+    rows = originalData.map((entry) {
+      final cells = <String, PlutoCell>{
         "process_name": PlutoCell(value: entry["process_name"]),
       };
 
       int grandTotal = 0;
 
-      for (String time in timeSlots) {
-        int total = 0;
+      // Calculate totals for each time slot
+      for (final time in timeSlots) {
+        int timeSlotTotal = 0;
 
         for (int i = 1; i <= 5; i++) {
-          int count = entry["${time}_$i"] ?? 0;
-          total += count;
+          final count = (entry["${time}_$i"] as num?)?.toInt() ?? 0;
+          timeSlotTotal += count;
           cells["${time}_$i"] = PlutoCell(value: count);
         }
 
-        grandTotal += total;
-        cells["${time}_total"] = PlutoCell(value: total);
+        grandTotal += timeSlotTotal;
+        cells["${time}_total"] = PlutoCell(value: timeSlotTotal);
       }
 
       cells["grand_total"] = PlutoCell(value: grandTotal);
@@ -324,7 +358,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
   Widget buildChart(String processName) {
     final process = originalData.firstWhere((e) => e["process_name"] == processName);
-    final List<Color> lineColors = [
+    final lineColors = [
       Colors.red,
       Colors.green,
       Colors.blue,
@@ -332,28 +366,39 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       Colors.purple,
     ];
 
-    List<LineChartBarData> lineBars = [];
+    final extendedTimeSlots = ["0", ...timeSlots];
+
+    final lineBars = <LineChartBarData>[];
     
-    // Create a line for each production line (1-5) that has data
     for (int lineNum = 1; lineNum <= 5; lineNum++) {
       bool hasData = false;
-      List<FlSpot> spots = [];
+      final spots = <FlSpot>[FlSpot(0, 0)];
       
       for (int t = 0; t < timeSlots.length; t++) {
-        final value = (process["${timeSlots[t]}_$lineNum"] ?? 0) as num;
+        final value = (process["${timeSlots[t]}_$lineNum"] as num?)?.toDouble() ?? 0;
         if (value > 0) hasData = true;
-        spots.add(FlSpot(t.toDouble(), value.toDouble()));
+        spots.add(FlSpot((t+1).toDouble(), value));
       }
       
       if (hasData) {
         lineBars.add(
           LineChartBarData(
             spots: spots,
-            isCurved: false, // Straight lines instead of curved
+            isCurved: false,
             color: lineColors[lineNum - 1],
             barWidth: 3,
             isStrokeCapRound: false,
-            dotData: FlDotData(show: false),
+            dotData: FlDotData(
+              show: true,
+              getDotPainter: (spot, percent, barData, index) {
+                return FlDotCirclePainter(
+                  radius: 5,
+                  color: lineColors[lineNum - 1],
+                  strokeWidth: 2,
+                  strokeColor: Colors.white,
+                );
+              },
+            ),
             belowBarData: BarAreaData(show: false),
           ),
         );
@@ -361,60 +406,121 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(top: 24.0),
-      child: LineChart(
-        LineChartData(
-          lineTouchData: LineTouchData(
-            enabled: true,
-            touchTooltipData: LineTouchTooltipData(
-              getTooltipItems: (List<LineBarSpot> touchedSpots) {
-                return touchedSpots.map((spot) {
-                  final timeSlot = timeSlots[spot.x.toInt()];
-                  return LineTooltipItem(
-                    'Line ${spot.barIndex + 1}: ${spot.y.toInt()}\n$timeSlot',
-                    const TextStyle(color: Colors.white),
-                  );
-                }).toList();
-              },
+      padding: const EdgeInsets.only(top: 8.0),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8.0,
+              runSpacing: 4.0,
+              children: List.generate(5, (index) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: lineColors[index],
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Line ${index + 1}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                );
+              }),
             ),
           ),
-          gridData: FlGridData(show: true),
-          titlesData: FlTitlesData(
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, _) => Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    timeSlots[value.toInt()],
-                    style: const TextStyle(fontSize: 10),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4.0),
+              child: LineChart(
+                LineChartData(
+                  lineTouchData: LineTouchData(
+                    enabled: true,
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (List<LineBarSpot> touchedSpots) {
+                        return touchedSpots.map((spot) {
+                          final timeIndex = spot.x.toInt();
+                          if (timeIndex == 0) {
+                            return LineTooltipItem(
+                              'Start: 0',
+                              const TextStyle(color: Colors.white),
+                            );
+                          }
+                          final timeSlot = timeSlots[timeIndex - 1];
+                          return LineTooltipItem(
+                            'Line ${spot.barIndex + 1}: ${spot.y.toInt()}\n$timeSlot',
+                            const TextStyle(color: Colors.white),
+                          );
+                        }).toList();
+                      },
+                    ),
                   ),
+                  gridData: FlGridData(show: true),
+                  titlesData: FlTitlesData(
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, _) {
+                          if (value != value.toInt()) return Container();
+                          final index = value.toInt();
+                          if (index < 0 || index >= extendedTimeSlots.length) return Container();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              extendedTimeSlots[index],
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          );
+                        },
+                        interval: 1,
+                        reservedSize: 24,
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 24,
+                        getTitlesWidget: (value, _) => Text(
+                          value.toInt().toString(),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ),
+                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: Border.all(color: const Color(0xff37434d), width: 1),
+                  ),
+                  minX: 0,
+                  maxX: extendedTimeSlots.length.toDouble() - 1,
+                  minY: 0,
+                  lineBarsData: lineBars,
                 ),
               ),
             ),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 40,
-                getTitlesWidget: (value, _) => Text(
-                  value.toInt().toString(),
-                  style: const TextStyle(fontSize: 12),
-                  textAlign: TextAlign.right,
-                ),
-              ),
-            ),
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
-          borderData: FlBorderData(
-            show: true,
-            border: Border.all(color: const Color(0xff37434d), width: 1),
-          ),
-          minX: 0,
-          maxX: timeSlots.length.toDouble() - 1,
-          minY: 0,
-          lineBarsData: lineBars,
-        ),
+        ],
       ),
     );
   }
@@ -433,7 +539,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         TextCellValue('GRAND TOTAL')
       ]);
 
-      for (var row in rows) {
+      for (final row in rows) {
         sheet.appendRow([
           TextCellValue(row.cells['process_name']!.value.toString()),
           ...timeSlots.expand((time) => [
@@ -602,16 +708,16 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                             Text(
                               'Target: ${dailyTarget ?? '-'}  ',
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.blue.shade800,
+                                color: Colors.black,
                               ),
                             ),
                             Text(
-                              'Per Jam: ${dailyTarget != null ? (dailyTarget! / 8).round() : '-'}',
+                              'Per Jam: ${dailyTarget != null ? (dailyTarget! ~/ 8) : '-'}',
                               style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.blue.shade600,
+                                fontSize: 20,
+                                color: Colors.black87,
                               ),
                             ),
                           ],
