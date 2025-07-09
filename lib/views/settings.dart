@@ -15,13 +15,14 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   ScrollController _scrollController = ScrollController();
   DateTime selectedDate = DateTime.now();
 
-  final List<String> lines = ["A", "B", "C", "D", "E"];
+  final List<String> lines = ["A", "B", "C", "D", "E", "Z"];
   final Map<String, String> lineTitles = {
     "A": "Line A",
     "B": "Line B",
     "C": "Line C",
     "D": "Line D",
     "E": "Line E",
+    "Z": "Line Z",
   };
 
   @override

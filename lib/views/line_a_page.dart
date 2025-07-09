@@ -53,7 +53,6 @@ class _LineAPageState extends State<LineAPage> {
   void _setupStreams() {
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.date);
     
-    // Setup stream for plan data
     _planSubscription = _firestore.collection('counter_sistem')
       .doc(dateStr)
       .snapshots()
@@ -76,7 +75,6 @@ class _LineAPageState extends State<LineAPage> {
         });
       });
 
-    // Setup stream for actual data from Process collection
     _processSubscription = _firestore.collection('counter_sistem')
       .doc(dateStr)
       .collection('A')
@@ -88,7 +86,6 @@ class _LineAPageState extends State<LineAPage> {
           int maxSequence = 0;
           int lastProcessTotal = 0;
           
-          // Find process with highest sequence number
           for (var doc in snapshot.docs) {
             final processData = doc.data() as Map<String, dynamic>;
             final sequence = (processData['sequence'] as int?) ?? 0;
@@ -97,7 +94,6 @@ class _LineAPageState extends State<LineAPage> {
               maxSequence = sequence;
               lastProcessTotal = 0;
               
-              // Calculate total for this process
               processData.forEach((key, value) {
                 if (key != 'sequence' && value is Map<String, dynamic>) {
                   value.forEach((lineKey, lineValue) {
@@ -201,12 +197,15 @@ class _LineAPageState extends State<LineAPage> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final fontSize = screenWidth < 600 ? 60.0 : 
-                    screenWidth < 900 ? 100.0 : 
-                    175.0;
-    final horizontalPadding = screenWidth < 600 ? 16.0 : 
-                            screenWidth < 900 ? 50.0 : 
-                            150.0;
+    final screenHeight = MediaQuery.of(context).size.height;
+    
+    // Ukuran font sangat besar (25% dari tinggi layar)
+    final fontSize = screenHeight * 0.25;
+    final clampedFontSize = fontSize.clamp(60.0, 220.0);
+
+    // Padding minimal
+    final horizontalPadding = screenWidth * 0.04;
+    final verticalItemPadding = screenHeight * 0.005; // Jarak sangat rapat
 
     return Scaffold(
       backgroundColor: Colors.blue.shade100,
@@ -214,7 +213,7 @@ class _LineAPageState extends State<LineAPage> {
         title: Text(
           'Line A Production - ${DateFormat('yyyy-MM-dd').format(widget.date)}',
           style: TextStyle(
-            fontSize: screenWidth < 600 ? 16 : 20,
+            fontSize: screenWidth < 600 ? 22 : 26,
             fontWeight: FontWeight.bold,
             color: Colors.white,
           ),
@@ -244,7 +243,7 @@ class _LineAPageState extends State<LineAPage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text('Failed to load data', 
-                          style: TextStyle(fontSize: screenWidth < 600 ? 18 : 24)),
+                          style: TextStyle(fontSize: screenWidth < 600 ? 24 : 28)),
                       const SizedBox(height: 20),
                       ElevatedButton(
                         onPressed: () {
@@ -258,35 +257,45 @@ class _LineAPageState extends State<LineAPage> {
                   ),
                 )
               : Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Card(
-                    elevation: 8,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        vertical: 5,   
-                        horizontal: horizontalPadding,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: screenWidth * 0.01,
+                    vertical: screenHeight * 0.005,
+                  ),
+                  child: SizedBox(
+                    height: screenHeight * 0.88, // Hampir memenuhi layar
+                    child: Card(
+                      elevation: 12,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _buildMetricRow(
-                            label: 'PLAN',
-                            value: _plan?.toString() ?? '-',
-                            fontSize: fontSize,
-                          ),
-                          const SizedBox(height: 0),
-                          _buildMetricRow(
-                            label: 'TARGET',
-                            value: _displayedTarget.toString(),
-                            fontSize: fontSize,
-                          ).animate().fadeIn(duration: 300.ms),
-                          const SizedBox(height: 0),
-                          _buildMetricRow(
-                            label: 'ACTUAL',
-                            value: _actual.toString(),
-                            fontSize: fontSize,
-                          ),
-                        ],
+                      margin: EdgeInsets.zero,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: horizontalPadding,
+                          vertical: screenHeight * 0.01,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildMetricRow(
+                              label: 'PLAN',
+                              value: _plan?.toString() ?? '-',
+                              fontSize: clampedFontSize,
+                            ),
+                            SizedBox(height: verticalItemPadding),
+                            _buildMetricRow(
+                              label: 'TARGET',
+                              value: _displayedTarget.toString(),
+                              fontSize: clampedFontSize,
+                            ).animate().fadeIn(duration: 300.ms),
+                            SizedBox(height: verticalItemPadding),
+                            _buildMetricRow(
+                              label: 'ACTUAL',
+                              value: _actual.toString(),
+                              fontSize: clampedFontSize,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -299,9 +308,8 @@ class _LineAPageState extends State<LineAPage> {
     required String value,
     required double fontSize,
   }) {
-    return Container(
-      padding: EdgeInsets.zero,
-      margin: EdgeInsets.zero,
+    return SizedBox(
+      height: fontSize * 1.05, // Tinggi baris sangat ketat
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -309,10 +317,10 @@ class _LineAPageState extends State<LineAPage> {
           Text(
             '$label:', 
             style: TextStyle(
-              fontSize: fontSize, 
+              fontSize: fontSize,
               color: Colors.black,
               fontWeight: FontWeight.bold,
-              height: 1.1,
+              height: 0.9, // Line height sangat ketat
             ),
           ),
           Text(
@@ -321,7 +329,7 @@ class _LineAPageState extends State<LineAPage> {
               fontSize: fontSize,
               fontWeight: FontWeight.bold,
               color: Colors.red,
-              height: 1.1,
+              height: 0.9,
             ),
           ),
         ],
