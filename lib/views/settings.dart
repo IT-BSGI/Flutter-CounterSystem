@@ -27,175 +27,190 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   @override
   void initState() {
     super.initState();
+    // Initialize controllers for all lines
+    for (var line in lines) {
+      _processControllers[line] = [];
+      _sequenceControllers[line] = [];
+    }
     fetchProcessLines();
   }
 
   Future<void> fetchProcessLines() async {
-    try {
-      DocumentSnapshot processSnapshot = 
-          await _firestore.collection('basic_data').doc('data_process').get();
+  try {
+    setState(() => _isLoading = true);
+    
+    DocumentSnapshot processSnapshot = 
+        await _firestore.collection('basic_data').doc('data_process').get();
 
-      if (!processSnapshot.exists) return;
+    if (!processSnapshot.exists) {
+      print('Document data_process not found');
+      setState(() => _isLoading = false);
+      return;
+    }
 
-      Map<String, dynamic> processData = processSnapshot.data() as Map<String, dynamic>;
+    Map<String, dynamic> processData = processSnapshot.data() as Map<String, dynamic>;
+    String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
 
-      Map<String, List<TextEditingController>> processControllers = {};
-      Map<String, List<TextEditingController>> sequenceControllers = {};
-
-      String formattedSelectedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-      String formattedToday = DateFormat("yyyy-MM-dd").format(DateTime.now());
-
-      for (String line in lines) {
-        String lineKey = "process_line_$line";
-        List<String> processes = 
-            processData[lineKey] != null ? List<String>.from(processData[lineKey]) : [];
-        
-        processControllers[line] =
-            processes.map((process) => TextEditingController(text: process)).toList();
-        sequenceControllers[line] =
-            processes.map((_) => TextEditingController()).toList();
-
-        for (int i = 0; i < processes.length; i++) {
-          String processName = processes[i];
-          
-          DocumentReference processRef = _firestore
-              .collection('counter_sistem')
-              .doc(formattedSelectedDate)
-              .collection(line)
-              .doc('Kumitate')
-              .collection('Process')
-              .doc(processName);
-
-          DocumentSnapshot processSnapshot = await processRef.get();
-          
-          if (processSnapshot.exists) {
-            Map<String, dynamic>? processDoc = processSnapshot.data() as Map<String, dynamic>?;
-            if (processDoc != null) {
-              dynamic seqValue = processDoc['sequence'];
-              if (seqValue != null) {
-                sequenceControllers[line]![i].text = seqValue.toString();
-              }
-            }
-          } 
-          else if (formattedSelectedDate != formattedToday) {
-            DocumentReference todayProcessRef = _firestore
-                .collection('counter_sistem')
-                .doc(formattedToday)
-                .collection(line)
-                .doc('Kumitate')
-                .collection('Process')
-                .doc(processName);
-
-            DocumentSnapshot todayProcessSnapshot = await todayProcessRef.get();
-            
-            if (todayProcessSnapshot.exists) {
-              Map<String, dynamic>? todayProcessDoc = todayProcessSnapshot.data() as Map<String, dynamic>?;
-              if (todayProcessDoc != null) {
-                dynamic seqValue = todayProcessDoc['sequence'];
-                if (seqValue != null) {
-                  sequenceControllers[line]![i].text = seqValue.toString();
-                }
-              }
-            }
-          }
-        }
-
-        _sortProcessesBySequence(line, processControllers, sequenceControllers);
+    for (String line in lines) {
+      String lineKey = "process_line_$line";
+      
+      if (!processData.containsKey(lineKey) || processData[lineKey] == null) {
+        print('Key $lineKey not found or null in document');
+        continue;
       }
 
-      setState(() {
-        _processControllers = processControllers;
-        _sequenceControllers = sequenceControllers;
-        _isLoading = false;
-      });
-    } catch (e) {
-      print("Error fetching data: $e");
-      setState(() => _isLoading = false);
-    }
-  }
+      List<String> processes = List<String>.from(processData[lineKey] ?? []);
+      
+      _processControllers[line] = 
+          processes.map((p) => TextEditingController(text: p)).toList();
+      _sequenceControllers[line] = 
+          processes.map((_) => TextEditingController(text: "0")).toList();
 
-  void _sortProcessesBySequence(
-    String line, 
-    Map<String, List<TextEditingController>> processControllers, 
-    Map<String, List<TextEditingController>> sequenceControllers
-  ) {
+      // Fetch sequence for each process
+      CollectionReference sequenceRef = _firestore
+          .collection('counter_sistem')
+          .doc(formattedDate)
+          .collection(line)
+          .doc('Kumitate')
+          .collection('Process');
+
+      for (int i = 0; i < processes.length; i++) {
+        String processName = processes[i];
+        
+        // Skip if process name is empty
+        if (processName.isEmpty) {
+          print('Empty process name at index $i in line $line');
+          continue;
+        }
+
+        try {
+          DocumentSnapshot seqDoc = await sequenceRef.doc(processName).get();
+          
+          if (seqDoc.exists && seqDoc.data() != null) {
+            dynamic seqValue = (seqDoc.data() as Map<String, dynamic>)['sequence'];
+            if (seqValue != null) {
+              _sequenceControllers[line]![i].text = seqValue.toString();
+            }
+          }
+        } catch (e) {
+          print('Error fetching sequence for $processName: $e');
+        }
+      }
+
+      _sortProcessesBySequence(line);
+    }
+
+    setState(() => _isLoading = false);
+  } catch (e) {
+    print("Error fetching data: $e");
+    setState(() => _isLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Gagal memuat data: ${e.toString()}')),
+    );
+  }
+}
+
+  void _sortProcessesBySequence(String line) {
     List<Map<String, dynamic>> tempList = [];
-    for (int i = 0; i < processControllers[line]!.length; i++) {
+    for (int i = 0; i < _processControllers[line]!.length; i++) {
       tempList.add({
-        'process': processControllers[line]![i].text,
-        'sequence': int.tryParse(sequenceControllers[line]![i].text) ?? 0,
+        'process': _processControllers[line]![i].text,
+        'sequence': int.tryParse(_sequenceControllers[line]![i].text) ?? 0,
       });
     }
 
     tempList.sort((a, b) => a['sequence'].compareTo(b['sequence']));
 
     for (int i = 0; i < tempList.length; i++) {
-      processControllers[line]![i].text = tempList[i]['process'];
-      sequenceControllers[line]![i].text = tempList[i]['sequence'].toString();
+      _processControllers[line]![i].text = tempList[i]['process'];
+      _sequenceControllers[line]![i].text = tempList[i]['sequence'].toString();
     }
   }
 
   Future<void> saveChangesPerLine(String line) async {
-    try {
-      List<Map<String, dynamic>> processData = [];
-      for (int i = 0; i < _processControllers[line]!.length; i++) {
-        String processName = _processControllers[line]![i].text.trim();
-        String sequenceText = _sequenceControllers[line]![i].text.trim();
-        int sequence = sequenceText.isEmpty ? 0 : int.tryParse(sequenceText) ?? 0;
-        
-        if (processName.isNotEmpty) {
-          processData.add({
-            'process': processName,
-            'sequence': sequence,
-          });
-        }
-      }
-
-      processData.sort((a, b) => a['sequence'].compareTo(b['sequence']));
-
-      List<String> updatedProcesses = processData.map((e) => e['process'] as String).toList();
-      await _firestore.collection('basic_data').doc('data_process').update({
-        "process_line_$line": updatedProcesses,
-      });
-
-      String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-      WriteBatch batch = _firestore.batch();
+  try {
+    // Prepare data for saving
+    List<Map<String, dynamic>> processData = [];
+    for (int i = 0; i < _processControllers[line]!.length; i++) {
+      String processName = _processControllers[line]![i].text.trim();
+      int sequence = int.tryParse(_sequenceControllers[line]![i].text.trim()) ?? 0;
       
-      for (var item in processData) {
-        DocumentReference processRef = _firestore
-            .collection('counter_sistem')
-            .doc(formattedDate)
-            .collection(line)
-            .doc('Kumitate')
-            .collection('Process')
-            .doc(item['process']);
-
-        batch.set(processRef, {'sequence': item['sequence']}, SetOptions(merge: true));
+      if (processName.isNotEmpty) {
+        processData.add({
+          'process': processName,
+          'sequence': sequence,
+        });
       }
-
-      await batch.commit();
-
-      setState(() {
-        for (int i = 0; i < processData.length; i++) {
-          _processControllers[line]![i].text = processData[i]['process'];
-          _sequenceControllers[line]![i].text = processData[i]['sequence'].toString();
-        }
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("${lineTitles[line]} berhasil disimpan dan diurutkan!")),
-      );
-    } catch (e) {
-      print("Error saving data: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Gagal menyimpan ${lineTitles[line]}: ${e.toString()}")),
-      );
     }
+
+    // Sort by sequence
+    processData.sort((a, b) => a['sequence'].compareTo(b['sequence']));
+
+    // 1. Save process names to basic_data
+    await _firestore.collection('basic_data').doc('data_process').update({
+      "process_line_$line": processData.map((e) => e['process']).toList(),
+    });
+
+    // 2. Save sequences to counter_sistem with merge option
+    String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
+    WriteBatch batch = _firestore.batch();
+    
+    // First get all existing processes to clean up removed ones
+    QuerySnapshot existingProcesses = await _firestore
+        .collection('counter_sistem')
+        .doc(formattedDate)
+        .collection(line)
+        .doc('Kumitate')
+        .collection('Process')
+        .get();
+
+    // Create set of current process names
+    Set<String> currentProcesses = processData.map((e) => e['process'] as String).toSet();
+
+    // Delete processes that were removed
+    for (DocumentSnapshot doc in existingProcesses.docs) {
+      if (!currentProcesses.contains(doc.id)) {
+        batch.delete(doc.reference);
+      }
+    }
+
+    // Update or add new processes
+    for (var item in processData) {
+      DocumentReference processRef = _firestore
+          .collection('counter_sistem')
+          .doc(formattedDate)
+          .collection(line)
+          .doc('Kumitate')
+          .collection('Process')
+          .doc(item['process']);
+
+      batch.set(processRef, {'sequence': item['sequence']}, SetOptions(merge: true));
+    }
+
+    await batch.commit();
+
+    // Update UI with sorted data
+    setState(() {
+      for (int i = 0; i < processData.length; i++) {
+        _processControllers[line]![i].text = processData[i]['process'];
+        _sequenceControllers[line]![i].text = processData[i]['sequence'].toString();
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("${lineTitles[line]} berhasil disimpan!")),
+    );
+  } catch (e) {
+    print("Error saving data: $e");
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Gagal menyimpan ${lineTitles[line]}: $e")),
+    );
   }
+}
 
   void addProcess(String line) {
     setState(() {
-      _processControllers[line]!.add(TextEditingController(text: ""));
+      _processControllers[line]!.add(TextEditingController(text: "New Process"));
       _sequenceControllers[line]!.add(TextEditingController(text: "0"));
     });
   }
@@ -204,6 +219,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
     String processName = _processControllers[line]![index].text;
     
     try {
+      // Update basic_data
       List<String> updatedProcesses = [];
       for (int i = 0; i < _processControllers[line]!.length; i++) {
         if (i != index) {
@@ -215,16 +231,16 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
         "process_line_$line": updatedProcesses,
       });
 
+      // Delete from counter_sistem
       String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-      DocumentReference processRef = _firestore
+      await _firestore
           .collection('counter_sistem')
           .doc(formattedDate)
           .collection(line)
           .doc('Kumitate')
           .collection('Process')
-          .doc(processName);
-
-      await processRef.delete();
+          .doc(processName)
+          .delete();
 
       setState(() {
         _processControllers[line]![index].dispose();
@@ -234,12 +250,12 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Proses $processName dihapus dari ${lineTitles[line]}")),
+        SnackBar(content: Text("Process $processName deleted from ${lineTitles[line]}")),
       );
     } catch (e) {
       print("Error deleting process: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Gagal menghapus proses: ${e.toString()}")),
+        SnackBar(content: Text("Failed to delete process: ${e.toString()}")),
       );
     }
   }
@@ -252,25 +268,15 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
       lastDate: DateTime.now().add(Duration(days: 365)),
     );
     if (picked != null && picked != selectedDate) {
-      setState(() {
-        selectedDate = picked;
-      });
+      setState(() => selectedDate = picked);
       await fetchProcessLines();
     }
   }
 
   @override
   void dispose() {
-    _processControllers.forEach((_, controllers) {
-      for (var controller in controllers) {
-        controller.dispose();
-      }
-    });
-    _sequenceControllers.forEach((_, controllers) {
-      for (var controller in controllers) {
-        controller.dispose();
-      }
-    });
+    _processControllers.forEach((_, controllers) => controllers.forEach((c) => c.dispose()));
+    _sequenceControllers.forEach((_, controllers) => controllers.forEach((c) => c.dispose()));
     _scrollController.dispose();
     super.dispose();
   }
