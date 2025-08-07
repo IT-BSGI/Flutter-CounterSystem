@@ -3,7 +3,7 @@ import 'package:pluto_grid/pluto_grid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:excel/excel.dart' hide Border;
+import 'package:excel/excel.dart' as excel;
 import 'package:file_saver/file_saver.dart';
 import 'dart:typed_data';
 
@@ -53,7 +53,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     "Cuff IN", "Cuff OUT",
   ];
 
-  // List of processes that should be divided by 2 (for hourly data only)
   final List<String> dividedByTwoProcesses = [
     "Cuff IN", "Cuff OUT", "Sode IN", "Sode OUT"
   ];
@@ -121,6 +120,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
       for (var doc in snapshot.docs) {
         final processData = doc.data();
+        final partData = processData['part'] ?? {};
+        final part1 = partData is String ? partData : partData['part1'] ?? "";
+        final part2 = partData is String ? "" : partData['part2'] ?? "";
+
         final processMap = <String, dynamic>{
           "process_name": doc.id.replaceAll('_', ' '),
           "sequence": (processData['sequence'] as num?)?.toInt() ?? 0,
@@ -133,6 +136,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           "stock_pagi": processData['stock_pagi'] ?? {
             '1': 0, '2': 0, '3': 0, '4': 0, 'total': 0
           },
+          "part": part1,
+          "part_2": part2,
           "type": type,
           "raw_data": processData,
         };
@@ -143,7 +148,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         }
 
         processData.forEach((key, value) {
-          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_15min' && key != 'stock_pagi' && value is Map<String, dynamic>) {
+          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_15min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
             final timeKey = key;
             final mappedTime = timeRangeMap[timeKey];
             
@@ -177,7 +182,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         }
 
         processData.forEach((key, value) {
-          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_15min' && key != 'stock_pagi' && value is Map<String, dynamic>) {
+          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_15min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
             final timeKey = key;
             final mappedTime = timeRangeMap[timeKey];
             
@@ -321,7 +326,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           );
         },
       ),
-      // Stock Pagi Columns
       for (int i = 1; i <= 4; i++)
         PlutoColumn(
           title: "$i",
@@ -353,6 +357,187 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           },
         ),
       PlutoColumn(
+        title: "PART",
+        field: "part",
+        type: PlutoColumnType.text(),
+        width: 120,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        textAlign: PlutoColumnTextAlign.center,
+        backgroundColor: Colors.blue.shade200,
+        enableColumnDrag: false,
+        enableContextMenu: false,
+        enableDropToResize: false,
+        enableSorting: false,
+        enableEditingMode: true,
+        cellPadding: EdgeInsets.zero,
+        renderer: (rendererContext) {
+          final isFirstRow = rendererContext.row.sortIdx == 0;
+          
+          if (rendererContext.stateManager.isEditing && 
+              rendererContext.stateManager.currentCell == rendererContext.cell) {
+            if (isFirstRow) {
+              return Row(
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.all(2),
+                      child: TextField(
+                        controller: TextEditingController(
+                          text: rendererContext.cell.value?.toString() ?? ''
+                        ),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12),
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(
+                            borderSide: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                          ),
+                          contentPadding: EdgeInsets.zero,
+                          isDense: true,
+                        ),
+                        onChanged: (value) {
+                          rendererContext.stateManager.changeCellValue(
+                            rendererContext.cell,
+                            value,
+                            notify: true,
+                          );
+                        },
+                        onSubmitted: (value) {
+                          rendererContext.stateManager.setCurrentCell(
+                            rendererContext.row.cells['part_2']!,
+                            rendererContext.row.sortIdx,
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 60,
+                    child: Padding(
+                      padding: EdgeInsets.all(2),
+                      child: TextField(
+                        controller: TextEditingController(
+                          text: rendererContext.row.cells['part_2']?.value?.toString() ?? ''
+                        ),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12),
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(
+                            borderSide: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                          ),
+                          contentPadding: EdgeInsets.zero,
+                          isDense: true,
+                        ),
+                        onChanged: (value) {
+                          rendererContext.stateManager.changeCellValue(
+                            rendererContext.row.cells['part_2']!,
+                            value,
+                            notify: true,
+                          );
+                        },
+                        onSubmitted: (value) {
+                          rendererContext.stateManager.notifyListeners();
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            } else {
+              return Padding(
+                padding: EdgeInsets.all(2),
+                child: TextField(
+                  controller: TextEditingController(
+                    text: rendererContext.cell.value?.toString() ?? ''
+                  ),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12),
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                    isDense: true,
+                  ),
+                  onChanged: (value) {
+                    rendererContext.stateManager.changeCellValue(
+                      rendererContext.cell,
+                      value,
+                      notify: true,
+                    );
+                  },
+                  onSubmitted: (value) {
+                    rendererContext.stateManager.notifyListeners();
+                  },
+                ),
+              );
+            }
+          }
+          
+          if (isFirstRow) {
+            return Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 30,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        right: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      rendererContext.cell.value?.toString() ?? '',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+                Container(
+                  width: 60,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    border: Border(
+                      left: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    rendererContext.row.cells['part_2']?.value?.toString() ?? '',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            );
+          } else {
+            return Container(
+              height: 30,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.blue.shade800, width: 0.5),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                rendererContext.cell.value?.toString() ?? '',
+                style: TextStyle(fontSize: 12),
+              ),
+            );
+          }
+        },
+      ),
+      PlutoColumn(
+        title: "PART 2",
+        field: "part_2",
+        type: PlutoColumnType.text(),
+        width: 60,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        textAlign: PlutoColumnTextAlign.center,
+        backgroundColor: Colors.blue.shade200,
+        enableColumnDrag: false,
+        enableContextMenu: false,
+        enableDropToResize: false,
+        enableSorting: false,
+        enableEditingMode: true,
+        hide: true,
+      ),
+      PlutoColumn(
         title: "Total",
         field: "stock_pagi_total",
         type: PlutoColumnType.number(),
@@ -371,12 +556,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           return Container(
             height: 30,
             color: Colors.yellow.shade100,
-            alignment: Alignment.center,
-            child: Text(
-              total.toString(),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
+            child: Center(
+              child: Text(
+                total.toString(),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           );
@@ -388,7 +574,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       PlutoColumnGroup(
         title: "Stock Pagi",
         backgroundColor: Colors.blue.shade300,
-        fields: ["stock_pagi_1", "stock_pagi_2", "stock_pagi_3", "stock_pagi_4", "stock_pagi_total"],
+        fields: ["stock_pagi_1", "stock_pagi_2", "stock_pagi_3", "stock_pagi_4", "part", "part_2", "stock_pagi_total"],
       ),
     ];
 
@@ -412,12 +598,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             final value = rendererContext.cell.value as int;
             return Container(
               height: 30,
-              alignment: Alignment.center,
-              child: Text(
-                value.toString(),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+              child: Center(
+                child: Text(
+                  value.toString(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             );
@@ -450,13 +637,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             return Container(
               height: 30,
               color: Colors.yellow.shade100,
-              alignment: Alignment.center,
-              child: Text(
-                total.toString(),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: color,
+              child: Center(
+                child: Text(
+                  total.toString(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
                 ),
               ),
             );
@@ -494,13 +682,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             return Container(
               height: 30,
               color: Colors.orange.shade100,
-              alignment: Alignment.center,
-              child: Text(
-                cumulative.toString(),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: color,
+              child: Center(
+                child: Text(
+                  cumulative.toString(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
                 ),
               ),
             );
@@ -545,13 +734,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           return Container(
             height: 30,
             color: Colors.orange.shade200,
-            alignment: Alignment.center,
-            child: Text(
-              total.toString(),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: color,
+            child: Center(
+              child: Text(
+                total.toString(),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
               ),
             ),
           );
@@ -579,6 +769,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           "stock_pagi_2": PlutoCell(value: stockPagi['2'] ?? 0),
           "stock_pagi_3": PlutoCell(value: stockPagi['3'] ?? 0),
           "stock_pagi_4": PlutoCell(value: stockPagi['4'] ?? 0),
+          "part": PlutoCell(value: entry["part"] ?? ""),
+          "part_2": PlutoCell(value: entry["part_2"] ?? ""),
           "stock_pagi_total": PlutoCell(value: stockPagi['total'] ?? 0),
         };
 
@@ -676,13 +868,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             
             return Container(
               height: 30,
-              alignment: Alignment.center,
-              child: Text(
-                cumulative.toString(),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: color,
+              child: Center(
+                child: Text(
+                  cumulative.toString(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
                 ),
               ),
             );
@@ -744,12 +937,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           }
           return Container(
             padding: EdgeInsets.symmetric(horizontal: 8),
-            alignment: Alignment.center,
-            child: Text(
-              rendererContext.cell.value.toString(),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
+            child: Center(
+              child: Text(
+                rendererContext.cell.value.toString(),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           );
@@ -776,7 +970,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             entry["${time}_$i"] = (entry["${time}_$i"] as num?)?.toInt() ?? 0;
           }
           
-          // Apply division by 2 with floor rounding for specific processes (only for hourly data)
           if (dividedByTwoProcesses.contains(entry["process_name"])) {
             final cumulativeValue = entry["${time}_cumulative"] ?? 0;
             cells["${time}_cumulative"] = PlutoCell(
@@ -867,7 +1060,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     final cumulativeSpots = <FlSpot>[FlSpot(0, 0)];
     for (int t = 0; t < timeSlots.length; t++) {
       double value = (process["${timeSlots[t]}_cumulative"] as num?)?.toDouble() ?? 0;
-      // Apply division by 2 with floor rounding for specific processes in the chart (only for hourly data)
       if (type == 'Part' && dividedByTwoProcesses.contains(processName)) {
         value = (value / 2).floorToDouble();
       }
@@ -1057,67 +1249,75 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
   Future<void> exportToExcel() async {
     try {
-      final excel = Excel.createExcel();
-      final sheet = excel['Sheet1'];
+      final excelFile = excel.Excel.createExcel();
+      final sheet = excelFile['Sheet1'];
 
+      // Header row
       sheet.appendRow([
-        TextCellValue('TYPE'),
-        TextCellValue('PROCESS'),
-        ...timeSlots.map((time) => TextCellValue(time)),
-        TextCellValue('Stock sebelum kensa (pagi)'),
-        TextCellValue('Stock 15 menit'),
-        TextCellValue('Stock Pagi 1'),
-        TextCellValue('Stock Pagi 2'),
-        TextCellValue('Stock Pagi 3'),
-        TextCellValue('Stock Pagi 4'),
-        TextCellValue('Total Stock Pagi'),
+        excel.TextCellValue('TYPE'), 
+        excel.TextCellValue('PROCESS'),
+        ...timeSlots.map((e) => excel.TextCellValue(e)),
+        excel.TextCellValue('Stock sebelum kensa (pagi)'),
+        excel.TextCellValue('Stock 15 menit'),
+        excel.TextCellValue('Stock Pagi 1'),
+        excel.TextCellValue('Stock Pagi 2'), 
+        excel.TextCellValue('Stock Pagi 3'),
+        excel.TextCellValue('Stock Pagi 4'),
+        excel.TextCellValue('PART 1'),
+        excel.TextCellValue('PART 2'),
+        excel.TextCellValue('Total Stock Pagi')
       ]);
 
+      // Kumitate data
       for (final row in kumitateRows) {
         sheet.appendRow([
-          TextCellValue('Kumitate'),
-          TextCellValue(row.cells['process_name']!.value.toString()),
-          ...timeSlots.map((time) => IntCellValue(row.cells['${time}_cumulative']!.value as int)),
-          IntCellValue(0),
-          IntCellValue(row.cells['stock_15min']!.value as int),
-          IntCellValue(row.cells['stock_pagi_1']!.value as int),
-          IntCellValue(row.cells['stock_pagi_2']!.value as int),
-          IntCellValue(row.cells['stock_pagi_3']!.value as int),
-          IntCellValue(row.cells['stock_pagi_4']!.value as int),
-          IntCellValue(row.cells['stock_pagi_total']!.value as int),
+          excel.TextCellValue('Kumitate'),
+          excel.TextCellValue(row.cells['process_name']!.value.toString()),
+          ...timeSlots.map((time) => excel.IntCellValue(row.cells['${time}_cumulative']!.value as int)),
+          excel.IntCellValue(0), // Stock sebelum kensa
+          excel.IntCellValue(row.cells['stock_15min']!.value as int),
+          excel.IntCellValue(row.cells['stock_pagi_1']!.value as int),
+          excel.IntCellValue(row.cells['stock_pagi_2']!.value as int),
+          excel.IntCellValue(row.cells['stock_pagi_3']!.value as int),
+          excel.IntCellValue(row.cells['stock_pagi_4']!.value as int),
+          excel.TextCellValue(row.cells['part']?.value?.toString() ?? ''),
+          excel.TextCellValue(row.cells['part_2']?.value?.toString() ?? ''),
+          excel.IntCellValue(row.cells['stock_pagi_total']!.value as int),
         ]);
       }
 
+      // Part data
       for (final row in partRows) {
-        int belumKensa = row.cells['belumKensa']!.value as int;
-        
         sheet.appendRow([
-          TextCellValue('Part'),
-          TextCellValue(row.cells['process_name']!.value.toString()),
+          excel.TextCellValue('Part'),
+          excel.TextCellValue(row.cells['process_name']!.value.toString()),
           ...timeSlots.map((time) {
             int value = row.cells['${time}_cumulative']!.value as int;
-            // Apply division by 2 with floor rounding for specific processes in export (only for hourly data)
             if (dividedByTwoProcesses.contains(row.cells['process_name']!.value.toString())) {
               value = (value / 2).floor();
             }
-            return IntCellValue(value);
+            return excel.IntCellValue(value);
           }),
-          IntCellValue(belumKensa),
-          IntCellValue(0),
-          IntCellValue(0),
-          IntCellValue(0),
-          IntCellValue(0),
-          IntCellValue(0),
+          excel.IntCellValue(row.cells['belumKensa']!.value as int),
+          excel.IntCellValue(0), // Stock 15 menit
+          excel.IntCellValue(0), // Stock Pagi 1
+          excel.IntCellValue(0), // Stock Pagi 2
+          excel.IntCellValue(0), // Stock Pagi 3
+          excel.IntCellValue(0), // Stock Pagi 4
+          excel.TextCellValue(''), // PART 1
+          excel.TextCellValue(''), // PART 2
+          excel.IntCellValue(0), // Total Stock Pagi
         ]);
       }
 
-      final bytes = excel.encode() as Uint8List;
+      // Save file
+      final bytes = excelFile.save()!;
       final dateStr = DateFormat('yyyyMMdd').format(selectedDate);
       final fileName = 'Counter_Data_Line${selectedLine}_$dateStr.xlsx';
       
       await FileSaver.instance.saveFile(
         name: fileName,
-        bytes: bytes,
+        bytes: Uint8List.fromList(bytes),
         ext: 'xlsx',
         mimeType: MimeType.microsoftExcel,
       );
@@ -1128,9 +1328,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         );
       }
     } catch (e) {
+      print('Export error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export failed: $e')),
+          SnackBar(content: Text('Export failed: ${e.toString()}')),
         );
       }
     }
@@ -1156,7 +1357,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         int belumKensa = 0;
         final cellValue = row.cells['belumKensa']?.value;
         
-        // Handle different possible types for the cell value
         if (cellValue is int) {
           belumKensa = cellValue;
         } else if (cellValue is String) {
@@ -1172,7 +1372,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         batch.update(docRef, updateData);
       }
       
-      // Save Kumitate stock 15 menit and stock pagi
+      // Save Kumitate stock 15 menit, stock pagi, dan PART
       for (final row in kumitateRows) {
         final processName = row.cells['process_name']!.value.toString().replaceAll(' ', '_');
         final docRef = FirebaseFirestore.instance
@@ -1186,7 +1386,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         int stock15min = 0;
         final cellValue = row.cells['stock_15min']?.value;
         
-        // Handle different possible types for the cell value
         if (cellValue is int) {
           stock15min = cellValue;
         } else if (cellValue is String) {
@@ -1207,9 +1406,17 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                    (row.cells['stock_pagi_4']?.value as int? ?? 0),
         };
         
+        // Get PART values
+        final partValue = row.cells['part']?.value as String? ?? '';
+        final partValue2 = row.cells['part_2']?.value as String? ?? '';
+        
         final updateData = {
           'stock_15min': stock15min,
           'stock_pagi': stockPagi,
+          'part': {
+            'part1': partValue,
+            'part2': partValue2,
+          },
         };
         
         batch.update(docRef, updateData);
@@ -1219,7 +1426,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Data stock pagi dan stock 15 menit berhasil disimpan!')),
+          SnackBar(content: Text('Data berhasil disimpan!')),
         );
       }
     } catch (e) {
@@ -1239,7 +1446,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       context: context,
       initialDate: selectedDate,
       firstDate: DateTime(2023),
-      lastDate: DateTime.now().add(Duration(days: 1)), // Allow today + 1 day
+      lastDate: DateTime.now().add(Duration(days: 1)),
     );
 
     if (picked != null && picked != selectedDate) {
@@ -1526,20 +1733,29 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                 onChanged: (PlutoGridOnChangedEvent event) {
                   if (event.column.field == 'belumKensa' || 
                       event.column.field == 'stock_15min' ||
+                      event.column.field == 'part' ||
+                      event.column.field == 'part_2' ||
                       event.column.field.startsWith('stock_pagi_')) {
                     final stateManager = title == 'PART' 
                         ? _partStateManager 
                         : _kumitateStateManager;
                     
                     if (stateManager != null) {
-                      final intValue = int.tryParse(event.value.toString()) ?? 0;
-                      stateManager.changeCellValue(
-                        event.row.cells[event.column.field]!,
-                        intValue,
-                        notify: false,
-                      );
+                      if (event.column.field == 'part' || event.column.field == 'part_2') {
+                        stateManager.changeCellValue(
+                          event.row.cells[event.column.field]!,
+                          event.value.toString(),
+                          notify: false,
+                        );
+                      } else {
+                        final intValue = int.tryParse(event.value.toString()) ?? 0;
+                        stateManager.changeCellValue(
+                          event.row.cells[event.column.field]!,
+                          intValue,
+                          notify: false,
+                        );
+                      }
 
-                      // Calculate stock pagi total if any stock pagi field changes
                       if (event.column.field.startsWith('stock_pagi_') && !event.column.field.endsWith('total')) {
                         final pagi1 = event.row.cells['stock_pagi_1']?.value as int? ?? 0;
                         final pagi2 = event.row.cells['stock_pagi_2']?.value as int? ?? 0;
