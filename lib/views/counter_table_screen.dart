@@ -130,11 +130,11 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           "belumKensa": processData['belumKensa'] is String 
               ? int.tryParse(processData['belumKensa'] as String) ?? 0
               : (processData['belumKensa'] as num?)?.toInt() ?? 0,
-          "stock_15min": processData['stock_15min'] is String 
-              ? int.tryParse(processData['stock_15min'] as String) ?? 0
-              : (processData['stock_15min'] as num?)?.toInt() ?? 0,
+          "stock_20min": processData['stock_20min'] is String 
+              ? int.tryParse(processData['stock_20min'] as String) ?? 0
+              : (processData['stock_20min'] as num?)?.toInt() ?? 0,
           "stock_pagi": processData['stock_pagi'] ?? {
-            '1': 0, '2': 0, '3': 0, '4': 0, 'total': 0
+            '1': 0, '2': 0, '3': 0, '4': 0, 'stock': 0
           },
           "part": part1,
           "part_2": part2,
@@ -148,7 +148,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         }
 
         processData.forEach((key, value) {
-          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_15min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
+          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
             final timeKey = key;
             final mappedTime = timeRangeMap[timeKey];
             
@@ -182,7 +182,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         }
 
         processData.forEach((key, value) {
-          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_15min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
+          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
             final timeKey = key;
             final mappedTime = timeRangeMap[timeKey];
             
@@ -261,8 +261,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         },
       ),
       PlutoColumn(
-        title: "Stock 15 menit",
-        field: "stock_15min",
+        title: "Stock 20 menit",
+        field: "stock_20min",
         type: PlutoColumnType.text(),
         width: 130,
         titleTextAlign: PlutoColumnTextAlign.center,
@@ -538,8 +538,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         hide: true,
       ),
       PlutoColumn(
-        title: "Total",
-        field: "stock_pagi_total",
+        title: "Stock",
+        field: "stock_pagi_stock",
         type: PlutoColumnType.number(),
         width: 60,
         titleTextAlign: PlutoColumnTextAlign.center,
@@ -552,13 +552,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         enableEditingMode: false,
         cellPadding: EdgeInsets.zero,
         renderer: (rendererContext) {
-          final total = rendererContext.cell.value as int;
+          final stock = rendererContext.cell.value as int;
           return Container(
             height: 30,
             color: Colors.yellow.shade100,
             child: Center(
               child: Text(
-                total.toString(),
+                stock.toString(),
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -574,7 +574,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       PlutoColumnGroup(
         title: "Stock Pagi",
         backgroundColor: Colors.blue.shade300,
-        fields: ["stock_pagi_1", "stock_pagi_2", "stock_pagi_3", "stock_pagi_4", "part", "part_2", "stock_pagi_total"],
+        fields: ["stock_pagi_1", "stock_pagi_2", "stock_pagi_3", "stock_pagi_4", "part", "part_2", "stock_pagi_stock"],
       ),
     ];
 
@@ -697,13 +697,49 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         ),
       );
 
+      // Add new Stock column for each time slot
+      kumitateColumns.add(
+        PlutoColumn(
+          title: "Stock",
+          field: "${time}_stock",
+          type: PlutoColumnType.number(),
+          width: 80,
+          titleTextAlign: PlutoColumnTextAlign.center,
+          textAlign: PlutoColumnTextAlign.center,
+          backgroundColor: Colors.blue.shade300,
+          enableColumnDrag: false,
+          enableContextMenu: false,
+          enableDropToResize: false,
+          enableSorting: false,
+          enableEditingMode: false,
+          cellPadding: EdgeInsets.zero,
+          renderer: (rendererContext) {
+            final stock = rendererContext.cell.value as int;
+            return Container(
+              height: 30,
+              color: Colors.blue.shade100,
+              child: Center(
+                child: Text(
+                  stock.toString(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+
       kumitateColumnGroups.add(
         PlutoColumnGroup(
           title: time,
           backgroundColor: Colors.blue.shade300,
           fields: [
             "${time}_1", "${time}_2", "${time}_3", "${time}_4", "${time}_5",
-            "${time}_total", "${time}_cumulative"
+            "${time}_total", "${time}_cumulative", "${time}_stock"
           ],
         ),
       );
@@ -752,18 +788,19 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     kumitateRows = [];
     
     if (kumitateData.isNotEmpty) {
-      for (final entry in kumitateData) {
+      for (int i = 0; i < kumitateData.length; i++) {
+        final entry = kumitateData[i];
         final stockPagi = entry["stock_pagi"] as Map<String, dynamic>? ?? {
-          '1': 0, '2': 0, '3': 0, '4': 0, 'total': 0
+          '1': 0, '2': 0, '3': 0, '4': 0, 'stock': 0
         };
         
         final cells = <String, PlutoCell>{
           "process_name": PlutoCell(value: entry["process_name"]),
           "type": PlutoCell(value: "Kumitate"),
-          "stock_15min": PlutoCell(
-            value: entry["stock_15min"] is String 
-                ? int.tryParse(entry["stock_15min"] as String) ?? 0
-                : (entry["stock_15min"] as num?)?.toInt() ?? 0,
+          "stock_20min": PlutoCell(
+            value: entry["stock_20min"] is String 
+                ? int.tryParse(entry["stock_20min"] as String) ?? 0
+                : (entry["stock_20min"] as num?)?.toInt() ?? 0,
           ),
           "stock_pagi_1": PlutoCell(value: stockPagi['1'] ?? 0),
           "stock_pagi_2": PlutoCell(value: stockPagi['2'] ?? 0),
@@ -771,7 +808,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           "stock_pagi_4": PlutoCell(value: stockPagi['4'] ?? 0),
           "part": PlutoCell(value: entry["part"] ?? ""),
           "part_2": PlutoCell(value: entry["part_2"] ?? ""),
-          "stock_pagi_total": PlutoCell(value: stockPagi['total'] ?? 0),
+          "stock_pagi_stock": PlutoCell(value: stockPagi['stock'] ?? 0),
         };
 
         int grandTotal = 0;
@@ -788,6 +825,19 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           grandTotal += timeSlotTotal;
           cells["${time}_total"] = PlutoCell(value: timeSlotTotal);
           cells["${time}_cumulative"] = PlutoCell(value: entry["${time}_cumulative"] ?? 0);
+          
+          // Calculate stock for each time slot
+          if (i == 0) {
+            // First row (process) always has 0 stock
+            cells["${time}_stock"] = PlutoCell(value: 0);
+          } else {
+            // For other rows: stock = stock_pagi_stock + previous process cumulative - current process cumulative
+            final previousProcess = kumitateData[i-1];
+            final previousCumulative = previousProcess["${time}_cumulative"] ?? 0;
+            final currentCumulative = entry["${time}_cumulative"] ?? 0;
+            final stockValue = stockPagi['stock'] + previousCumulative - currentCumulative;
+            cells["${time}_stock"] = PlutoCell(value: stockValue);
+          }
         }
 
         cells["grand_total"] = PlutoCell(value: grandTotal);
@@ -1258,14 +1308,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         excel.TextCellValue('PROCESS'),
         ...timeSlots.map((e) => excel.TextCellValue(e)),
         excel.TextCellValue('Stock sebelum kensa (pagi)'),
-        excel.TextCellValue('Stock 15 menit'),
+        excel.TextCellValue('Stock 20 menit'),
         excel.TextCellValue('Stock Pagi 1'),
         excel.TextCellValue('Stock Pagi 2'), 
         excel.TextCellValue('Stock Pagi 3'),
         excel.TextCellValue('Stock Pagi 4'),
         excel.TextCellValue('PART 1'),
         excel.TextCellValue('PART 2'),
-        excel.TextCellValue('Total Stock Pagi')
+        excel.TextCellValue('Stock')
       ]);
 
       // Kumitate data
@@ -1275,14 +1325,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           excel.TextCellValue(row.cells['process_name']!.value.toString()),
           ...timeSlots.map((time) => excel.IntCellValue(row.cells['${time}_cumulative']!.value as int)),
           excel.IntCellValue(0), // Stock sebelum kensa
-          excel.IntCellValue(row.cells['stock_15min']!.value as int),
+          excel.IntCellValue(row.cells['stock_20min']!.value as int),
           excel.IntCellValue(row.cells['stock_pagi_1']!.value as int),
           excel.IntCellValue(row.cells['stock_pagi_2']!.value as int),
           excel.IntCellValue(row.cells['stock_pagi_3']!.value as int),
           excel.IntCellValue(row.cells['stock_pagi_4']!.value as int),
           excel.TextCellValue(row.cells['part']?.value?.toString() ?? ''),
           excel.TextCellValue(row.cells['part_2']?.value?.toString() ?? ''),
-          excel.IntCellValue(row.cells['stock_pagi_total']!.value as int),
+          excel.IntCellValue(row.cells['stock_pagi_stock']!.value as int),
         ]);
       }
 
@@ -1299,14 +1349,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             return excel.IntCellValue(value);
           }),
           excel.IntCellValue(row.cells['belumKensa']!.value as int),
-          excel.IntCellValue(0), // Stock 15 menit
+          excel.IntCellValue(0), // Stock 20 menit
           excel.IntCellValue(0), // Stock Pagi 1
           excel.IntCellValue(0), // Stock Pagi 2
           excel.IntCellValue(0), // Stock Pagi 3
           excel.IntCellValue(0), // Stock Pagi 4
           excel.TextCellValue(''), // PART 1
           excel.TextCellValue(''), // PART 2
-          excel.IntCellValue(0), // Total Stock Pagi
+          excel.IntCellValue(0), // Stock
         ]);
       }
 
@@ -1372,7 +1422,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         batch.update(docRef, updateData);
       }
       
-      // Save Kumitate stock 15 menit, stock pagi, dan PART
+      // Save Kumitate stock 20 menit, stock pagi, dan PART
       for (final row in kumitateRows) {
         final processName = row.cells['process_name']!.value.toString().replaceAll(' ', '_');
         final docRef = FirebaseFirestore.instance
@@ -1383,15 +1433,15 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             .collection('Process')
             .doc(processName);
             
-        int stock15min = 0;
-        final cellValue = row.cells['stock_15min']?.value;
+        int stock20min = 0;
+        final cellValue = row.cells['stock_20min']?.value;
         
         if (cellValue is int) {
-          stock15min = cellValue;
+          stock20min = cellValue;
         } else if (cellValue is String) {
-          stock15min = int.tryParse(cellValue) ?? 0;
+          stock20min = int.tryParse(cellValue) ?? 0;
         } else if (cellValue is num) {
-          stock15min = cellValue.toInt();
+          stock20min = cellValue.toInt();
         }
 
         // Get stock pagi values
@@ -1400,7 +1450,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           '2': row.cells['stock_pagi_2']?.value as int? ?? 0,
           '3': row.cells['stock_pagi_3']?.value as int? ?? 0,
           '4': row.cells['stock_pagi_4']?.value as int? ?? 0,
-          'total': (row.cells['stock_pagi_1']?.value as int? ?? 0) +
+          'stock': (row.cells['stock_pagi_1']?.value as int? ?? 0) +
                    (row.cells['stock_pagi_2']?.value as int? ?? 0) +
                    (row.cells['stock_pagi_3']?.value as int? ?? 0) +
                    (row.cells['stock_pagi_4']?.value as int? ?? 0),
@@ -1411,7 +1461,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         final partValue2 = row.cells['part_2']?.value as String? ?? '';
         
         final updateData = {
-          'stock_15min': stock15min,
+          'stock_20min': stock20min,
           'stock_pagi': stockPagi,
           'part': {
             'part1': partValue,
@@ -1489,7 +1539,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           IconButton(
             icon: Icon(Icons.save, color: Colors.white),
             onPressed: isSaving ? null : _saveToFirebase,
-            tooltip: "Simpan Stock Pagi dan 15 menit",
+            tooltip: "Simpan Stock Pagi dan 20 menit",
           ),
           IconButton(
             icon: Icon(Icons.file_download, color: Colors.white),
@@ -1732,7 +1782,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                 ),
                 onChanged: (PlutoGridOnChangedEvent event) {
                   if (event.column.field == 'belumKensa' || 
-                      event.column.field == 'stock_15min' ||
+                      event.column.field == 'stock_20min' ||
                       event.column.field == 'part' ||
                       event.column.field == 'part_2' ||
                       event.column.field.startsWith('stock_pagi_')) {
@@ -1756,15 +1806,15 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                         );
                       }
 
-                      if (event.column.field.startsWith('stock_pagi_') && !event.column.field.endsWith('total')) {
+                      if (event.column.field.startsWith('stock_pagi_') && !event.column.field.endsWith('stock')) {
                         final pagi1 = event.row.cells['stock_pagi_1']?.value as int? ?? 0;
                         final pagi2 = event.row.cells['stock_pagi_2']?.value as int? ?? 0;
                         final pagi3 = event.row.cells['stock_pagi_3']?.value as int? ?? 0;
                         final pagi4 = event.row.cells['stock_pagi_4']?.value as int? ?? 0;
-                        final pagiTotal = pagi1 + pagi2 + pagi3 + pagi4;
+                        final pagiStock = pagi1 + pagi2 + pagi3 + pagi4;
                         stateManager.changeCellValue(
-                          event.row.cells['stock_pagi_total']!,
-                          pagiTotal,
+                          event.row.cells['stock_pagi_stock']!,
+                          pagiStock,
                           notify: false,
                         );
                       }
