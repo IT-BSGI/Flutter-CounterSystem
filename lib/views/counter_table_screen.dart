@@ -697,7 +697,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         ),
       );
 
-      // Add new Stock column for each time slot
+      // Modified Stock column for each time slot with color coding
       kumitateColumns.add(
         PlutoColumn(
           title: "Stock",
@@ -715,6 +715,16 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           cellPadding: EdgeInsets.zero,
           renderer: (rendererContext) {
             final stock = rendererContext.cell.value as int;
+            Color textColor;
+            
+            if (stock < 0) {
+              textColor = Colors.red;
+            } else if (stock >= 0 && stock <= 5) {
+              textColor = Colors.orange;
+            } else {
+              textColor = Colors.green;
+            }
+            
             return Container(
               height: 30,
               color: Colors.blue.shade100,
@@ -724,7 +734,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: Colors.black,
+                    color: textColor,
                   ),
                 ),
               ),
