@@ -24,28 +24,18 @@ class _HomePageState extends State<HomePage> {
   Map<String, int> _targets = {};
   Map<String, StreamSubscription> _streamSubscriptions = {};
 
+  // Updated time slots to match counter_table_screen.dart
   final List<String> timeSlots = [
-    "07:30 - 08:29",
-    "08:30 - 09:29",
-    "09:30 - 10:29",
-    "10:30 - 11:29",
-    "12:30 - 13:29",
-    "13:30 - 14:29",
-    "14:30 - 15:29",
-    "15:30 - 16:29",
-    "16:30~"
+    "08:30", "09:30", "10:30", "11:30", "13:30", 
+    "14:30", "15:30", "16:30", "OT"
   ];
 
   final Map<String, String> timeRangeMap = {
-    "07:30": "07:30 - 08:29",
-    "08:30": "08:30 - 09:29",
-    "09:30": "09:30 - 10:29",
-    "10:30": "10:30 - 11:29",
-    "12:30": "12:30 - 13:29",
-    "13:30": "13:30 - 14:29",
-    "14:30": "14:30 - 15:29",
-    "15:30": "15:30 - 16:29",
-    "16:30": "16:30~",
+    "06:30": "08:30", "07:30": "08:30", "08:30": "09:30",
+    "09:30": "10:30", "10:30": "11:30", "11:30": "13:30",
+    "12:30": "13:30", "13:30": "14:30", "14:30": "15:30",
+    "15:30": "16:30", "16:30": "OT", "17:30": "OT",
+    "18:30": "OT", "19:30": "OT",
   };
 
   @override
@@ -268,14 +258,18 @@ class _HomePageState extends State<HomePage> {
 
         // Process each time entry in the document
         processData.forEach((key, value) {
-          if (key != 'sequence' && value is Map<String, dynamic>) {
+          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
             final timeKey = key;
             final mappedTime = timeRangeMap[timeKey];
             
             if (mappedTime != null) {
               int slotTotal = 0;
               for (int i = 1; i <= 5; i++) {
-                slotTotal += ((value['$i'] ?? 0) as num).toInt();
+                final dynamic countValue = value['$i'];
+                final int count = countValue is num 
+                    ? countValue.toInt() 
+                    : int.tryParse(countValue.toString()) ?? 0;
+                slotTotal += count;
               }
               cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
             }
@@ -354,7 +348,7 @@ class _HomePageState extends State<HomePage> {
 
       // Process each time entry in the document
       processData.forEach((key, value) {
-        if (key != 'sequence' && value is Map<String, dynamic>) {
+        if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
           final timeKey = key;
           final mappedTime = timeRangeMap[timeKey];
           
@@ -571,7 +565,7 @@ class _HomePageState extends State<HomePage> {
       
       if (target != null) {
         // Calculate target value (linear progression)
-        // Only show target up to 15:30 - 16:29 (8th time slot)
+        // Only show target up to 15:30 - 16:29 (7th time slot)
         if (i < 7) { // 0-6 index is up to 15:30 - 16:29
           double targetValue = (target * (i+1) / 8).toDouble(); // Divide by 8 for 8 hours
           targetSpots.add(FlSpot((i+1).toDouble(), targetValue));
@@ -673,7 +667,7 @@ class _HomePageState extends State<HomePage> {
                               getTitlesWidget: (value, _) {
                                 if (value != value.toInt()) return SizedBox();
                                 if (value.toInt() < 1 || value.toInt() > timeSlots.length) return SizedBox();
-                                String timeLabel = timeSlots[value.toInt() - 1].split(' ')[0];
+                                String timeLabel = timeSlots[value.toInt() - 1];
                                 return Padding(
                                   padding: const EdgeInsets.only(top: 8.0),
                                   child: Text(

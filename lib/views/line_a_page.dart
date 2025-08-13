@@ -80,32 +80,30 @@ class _LineAPageState extends State<LineAPage> {
       .collection('A')
       .doc('Kumitate')
       .collection('Process')
+      .orderBy('sequence', descending: true)
+      .limit(1)
       .snapshots()
       .listen((QuerySnapshot snapshot) {
         if (snapshot.docs.isNotEmpty) {
-          int maxSequence = 0;
-          int lastProcessTotal = 0;
+          final processData = snapshot.docs.first.data() as Map<String, dynamic>;
+          int totalCount = 0;
           
-          for (var doc in snapshot.docs) {
-            final processData = doc.data() as Map<String, dynamic>;
-            final sequence = (processData['sequence'] as int?) ?? 0;
-            
-            if (sequence >= maxSequence) {
-              maxSequence = sequence;
-              lastProcessTotal = 0;
-              
-              processData.forEach((key, value) {
-                if (key != 'sequence' && value is Map<String, dynamic>) {
-                  value.forEach((lineKey, lineValue) {
-                    lastProcessTotal += (lineValue as int? ?? 0);
-                  });
-                }
+          // Sum up all line counts from the process data
+          processData.forEach((key, value) {
+            if (key != 'sequence' && 
+                key != 'belumKensa' && 
+                key != 'stock_20min' && 
+                key != 'stock_pagi' && 
+                key != 'part' && 
+                value is Map<String, dynamic>) {
+              value.forEach((lineKey, lineValue) {
+                totalCount += (lineValue as int? ?? 0);
               });
             }
-          }
+          });
           
           setState(() {
-            _actual = lastProcessTotal;
+            _actual = totalCount;
           });
         } else {
           setState(() {

@@ -53,7 +53,6 @@ class _LineEPageState extends State<LineEPage> {
   void _setupStreams() {
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.date);
     
-    // Setup stream for plan data
     _planSubscription = _firestore.collection('counter_sistem')
       .doc(dateStr)
       .snapshots()
@@ -76,40 +75,34 @@ class _LineEPageState extends State<LineEPage> {
         });
       });
 
-    // Setup stream for actual data from Process collection
     _processSubscription = _firestore.collection('counter_sistem')
       .doc(dateStr)
       .collection('E')
       .doc('Kumitate')
       .collection('Process')
+      .orderBy('sequence', descending: true)
+      .limit(1)
       .snapshots()
       .listen((QuerySnapshot snapshot) {
         if (snapshot.docs.isNotEmpty) {
-          int maxSequence = 0;
-          int lastProcessTotal = 0;
+          final processData = snapshot.docs.first.data() as Map<String, dynamic>;
+          int totalCount = 0;
           
-          // Find process with highest sequence number
-          for (var doc in snapshot.docs) {
-            final processData = doc.data() as Map<String, dynamic>;
-            final sequence = (processData['sequence'] as int?) ?? 0;
-            
-            if (sequence >= maxSequence) {
-              maxSequence = sequence;
-              lastProcessTotal = 0;
-              
-              // Calculate total for this process
-              processData.forEach((key, value) {
-                if (key != 'sequence' && value is Map<String, dynamic>) {
-                  value.forEach((lineKey, lineValue) {
-                    lastProcessTotal += (lineValue as int? ?? 0);
-                  });
-                }
+          processData.forEach((key, value) {
+            if (key != 'sequence' && 
+                key != 'belumKensa' && 
+                key != 'stock_20min' && 
+                key != 'stock_pagi' && 
+                key != 'part' && 
+                value is Map<String, dynamic>) {
+              value.forEach((lineKey, lineValue) {
+                totalCount += (lineValue as int? ?? 0);
               });
             }
-          }
+          });
           
           setState(() {
-            _actual = lastProcessTotal;
+            _actual = totalCount;
           });
         } else {
           setState(() {
@@ -201,12 +194,13 @@ class _LineEPageState extends State<LineEPage> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final fontSize = screenWidth < 600 ? 60.0 : 
-                    screenWidth < 900 ? 100.0 : 
-                    175.0;
-    final horizontalPadding = screenWidth < 600 ? 16.0 : 
-                            screenWidth < 900 ? 50.0 : 
-                            150.0;
+    final screenHeight = MediaQuery.of(context).size.height;
+    
+    final fontSize = screenHeight * 0.25;
+    final clampedFontSize = fontSize.clamp(60.0, 220.0);
+
+    final horizontalPadding = screenWidth * 0.04;
+    final verticalItemPadding = screenHeight * 0.005;
 
     return Scaffold(
       backgroundColor: Colors.blue.shade100,
@@ -214,7 +208,7 @@ class _LineEPageState extends State<LineEPage> {
         title: Text(
           'Line E Production - ${DateFormat('yyyy-MM-dd').format(widget.date)}',
           style: TextStyle(
-            fontSize: screenWidth < 600 ? 16 : 20,
+            fontSize: screenWidth < 600 ? 22 : 26,
             fontWeight: FontWeight.bold,
             color: Colors.white,
           ),
@@ -244,7 +238,7 @@ class _LineEPageState extends State<LineEPage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text('Failed to load data', 
-                          style: TextStyle(fontSize: screenWidth < 600 ? 18 : 24)),
+                          style: TextStyle(fontSize: screenWidth < 600 ? 24 : 28)),
                       const SizedBox(height: 20),
                       ElevatedButton(
                         onPressed: () {
@@ -258,35 +252,45 @@ class _LineEPageState extends State<LineEPage> {
                   ),
                 )
               : Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Card(
-                    elevation: 8,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        vertical: 5,   
-                        horizontal: horizontalPadding,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: screenWidth * 0.01,
+                    vertical: screenHeight * 0.005,
+                  ),
+                  child: SizedBox(
+                    height: screenHeight * 0.88,
+                    child: Card(
+                      elevation: 12,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _buildMetricRow(
-                            label: 'PLAN',
-                            value: _plan?.toString() ?? '-',
-                            fontSize: fontSize,
-                          ),
-                          const SizedBox(height: 0),
-                          _buildMetricRow(
-                            label: 'TARGET',
-                            value: _displayedTarget.toString(),
-                            fontSize: fontSize,
-                          ).animate().fadeIn(duration: 300.ms),
-                          const SizedBox(height: 0),
-                          _buildMetricRow(
-                            label: 'ACTUAL',
-                            value: _actual.toString(),
-                            fontSize: fontSize,
-                          ),
-                        ],
+                      margin: EdgeInsets.zero,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: horizontalPadding,
+                          vertical: screenHeight * 0.01,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildMetricRow(
+                              label: 'PLAN',
+                              value: _plan?.toString() ?? '-',
+                              fontSize: clampedFontSize,
+                            ),
+                            SizedBox(height: verticalItemPadding),
+                            _buildMetricRow(
+                              label: 'TARGET',
+                              value: _displayedTarget.toString(),
+                              fontSize: clampedFontSize,
+                            ).animate().fadeIn(duration: 300.ms),
+                            SizedBox(height: verticalItemPadding),
+                            _buildMetricRow(
+                              label: 'ACTUAL',
+                              value: _actual.toString(),
+                              fontSize: clampedFontSize,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -299,9 +303,8 @@ class _LineEPageState extends State<LineEPage> {
     required String value,
     required double fontSize,
   }) {
-    return Container(
-      padding: EdgeInsets.zero,
-      margin: EdgeInsets.zero,
+    return SizedBox(
+      height: fontSize * 1.05,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -309,10 +312,10 @@ class _LineEPageState extends State<LineEPage> {
           Text(
             '$label:', 
             style: TextStyle(
-              fontSize: fontSize, 
+              fontSize: fontSize,
               color: Colors.black,
               fontWeight: FontWeight.bold,
-              height: 1.1,
+              height: 0.9,
             ),
           ),
           Text(
@@ -321,7 +324,7 @@ class _LineEPageState extends State<LineEPage> {
               fontSize: fontSize,
               fontWeight: FontWeight.bold,
               color: Colors.red,
-              height: 1.1,
+              height: 0.9,
             ),
           ),
         ],
