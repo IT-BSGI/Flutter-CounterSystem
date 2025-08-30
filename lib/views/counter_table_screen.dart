@@ -13,6 +13,35 @@ class CounterTableScreen extends StatefulWidget {
 }
 
 class _CounterTableScreenState extends State<CounterTableScreen> {
+  bool get isEditableNow {
+    final now = DateTime.now();
+    final isToday = selectedDate.year == now.year && selectedDate.month == now.month && selectedDate.day == now.day;
+    final before0830 = now.hour < 8 || (now.hour == 8 && now.minute < 30);
+    return isToday && before0830;
+  }
+  List<PlutoColumnGroup> partColumnGroups = [];
+  // Fungsi untuk menentukan warna baris PART
+  Color? getPartRowColor(String processName) {
+    switch (processName) {
+      case 'Maemi IN':
+      case 'Maemi OUT':
+        return Colors.blue.shade50;
+      case 'Ushiro IN':
+      case 'Ushiro OUT':
+        return Colors.blue.shade200;
+      case 'Eri IN':
+      case 'Eri OUT':
+        return Colors.blue.shade50;
+      case 'Sode IN':
+      case 'Sode OUT':
+        return Colors.blue.shade200;
+      case 'Cuff IN':
+      case 'Cuff OUT':
+        return Colors.blue.shade50;
+      default:
+        return null;
+    }
+  }
   List<PlutoColumn> kumitateColumns = [];
   List<PlutoRow> kumitateRows = [];
   List<PlutoColumnGroup> kumitateColumnGroups = [];
@@ -25,8 +54,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   DateTime selectedDate = DateTime.now();
   List<Map<String, dynamic>> kumitateData = [];
   List<Map<String, dynamic>> partData = [];
-  int? dailyTarget;
-  Map<String, int> hourlyTargets = {};
+  double? dailyTarget;
+  Map<String, double> hourlyTargets = {};
   bool isTargetLoading = true;
   bool isSaving = false;
   bool noDataAvailable = false;
@@ -36,15 +65,75 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
   final List<String> timeSlots = [
     "08:30", "09:30", "10:30", "11:30", "13:30", 
-    "14:30", "15:30", "16:30", "OT"
+    "14:30", "15:30", "16:30", "17:55", "18:55", "19:55",
   ];
 
   final Map<String, String> timeRangeMap = {
-    "06:30": "08:30", "07:30": "08:30", "08:30": "09:30",
-    "09:30": "10:30", "10:30": "11:30", "11:30": "13:30",
-    "12:30": "13:30", "13:30": "14:30", "14:30": "15:30",
-    "15:30": "16:30", "16:30": "OT", "17:30": "OT",
-    "18:30": "OT", "19:30": "OT",
+    "06:30": "08:30", 
+    "06:45": "08:30", 
+    "07:00": "08:30", 
+    "07:15": "08:30", 
+    "07:30": "08:30", 
+    "07:45": "08:30", 
+    "08:00": "08:30",
+    "08:15": "08:30",
+
+    "08:30": "09:30",
+    "08:45": "09:30",
+    "09:00": "09:30",
+    "09:15": "09:30",
+
+    "09:30": "10:30",
+    "09:45": "10:30",
+    "10:00": "10:30",
+    "10:15": "10:30",
+
+    "10:30": "11:30",
+    "10:45": "11:30",
+    "11:00": "11:30",
+    "11:15": "11:30",
+
+    "11:30": "13:30",
+    "11:45": "13:30",
+    "12:00": "13:30",
+    "12:15": "13:30",
+    "12:30": "13:30",
+    "12:45": "13:30",
+    "13:00": "13:30",
+    "13:15": "13:30",
+
+    "13:30": "14:30",
+    "13:45": "14:30",
+    "14:00": "14:30",
+    "14:15": "14:30",
+    
+    "14:30": "15:30",
+    "14:45": "15:30",
+    "15:00": "15:30",
+    "15:15": "15:30",
+
+    "15:30": "16:30", 
+    "15:45": "16:30",
+    "16:00": "16:30",
+    "16:15": "16:30",
+
+    "16:30": "17:55",
+    "16:45": "17:55",
+    "17:00": "17:55",
+    "17:15": "17:55",
+    "17:30": "17:55",
+    "17:45": "17:55",
+
+    "18:00": "18:55",
+    "18:15": "18:55",
+    "18:30": "18:55",
+    "18:45": "18:55",
+
+    "19:00": "19:55",
+    "19:15": "19:55",
+    "19:30": "19:55",
+    "19:45": "19:55",
+    "20:00": "19:55",
   };
 
   final List<String> partProcessOrder = [
@@ -52,6 +141,20 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     "Eri IN", "Eri OUT", "Sode IN", "Sode OUT",
     "Cuff IN", "Cuff OUT",
   ];
+
+  // Map nama process ke huruf Jepang (hiragana)
+  final Map<String, String> partProcessHiragana = {
+    "Maemi IN": "まえみ いん",
+    "Maemi OUT": "まえみ あうと",
+    "Ushiro IN": "うしろ いん",
+    "Ushiro OUT": "うしろ あうと",
+    "Eri IN": "えり いん",
+    "Eri OUT": "えり あうと",
+    "Sode IN": "そで いん",
+    "Sode OUT": "そで あうと",
+    "Cuff IN": "かふ いん",
+    "Cuff OUT": "かふ あうと",
+  };
 
   final List<String> dividedByTwoProcesses = [
     "Cuff IN", "Cuff OUT", "Sode IN", "Sode OUT"
@@ -75,14 +178,24 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       if (doc.exists) {
         setState(() {
           final target = doc.data()?['target_$selectedLine'];
-          dailyTarget = target is int ? target : target?.toInt();
+          // Simpan sebagai double untuk akurasi
+          dailyTarget = target is num ? target.toDouble() : null;
+          
           if (dailyTarget != null) {
+            double targetPerHour = dailyTarget! / 8;
+            
             hourlyTargets = {
-              '08:30': (dailyTarget! ~/ 8), '09:30': (dailyTarget! ~/ 8),
-              '10:30': (dailyTarget! ~/ 8), '11:30': (dailyTarget! ~/ 8),
-              '13:30': (dailyTarget! ~/ 8), '14:30': (dailyTarget! ~/ 8),
-              '15:30': (dailyTarget! ~/ 8), '16:30': (dailyTarget! ~/ 8),
-              'OT': 0,
+              '08:30': targetPerHour,
+              '09:30': targetPerHour,
+              '10:30': targetPerHour,
+              '11:30': targetPerHour,
+              '13:30': targetPerHour,
+              '14:30': targetPerHour,
+              '15:30': targetPerHour,
+              '16:30': targetPerHour,
+              '17:55': 0.0,
+              '18:55': 0.0,
+              '19:55': 0.0,
             };
           }
         });
@@ -224,7 +337,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         title: "PROCESS",
         field: "process_name",
         type: PlutoColumnType.text(),
-        width: 230,
+        width: 260,
         titleTextAlign: PlutoColumnTextAlign.center,
         backgroundColor: Colors.blue.shade300,
         enableColumnDrag: false,
@@ -233,9 +346,20 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         enableEditingMode: false,
         renderer: (ctx) {
           final processName = ctx.cell.value.toString();
+          final hiragana = partProcessHiragana[processName];
           return Row(
             children: [
-              Expanded(child: Text(processName)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(processName, style: TextStyle(fontWeight: FontWeight.bold)),
+                    if (hiragana != null)
+                      Text('($hiragana)', style: TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                  ],
+                ),
+              ),
               IconButton(
                 icon: Icon(Icons.bar_chart, size: 18, color: Colors.blue),
                 onPressed: () => showDialog(
@@ -259,19 +383,20 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             ],
           );
         },
+        frozen: PlutoColumnFrozen.start,
       ),
       PlutoColumn(
         title: "Stock 20 menit",
         field: "stock_20min",
         type: PlutoColumnType.text(),
-        width: 130,
+        width: 117,
         titleTextAlign: PlutoColumnTextAlign.center,
         textAlign: PlutoColumnTextAlign.center,
         backgroundColor: Colors.blue.shade300,
         enableColumnDrag: false,
         enableDropToResize: false,
         enableContextMenu: false,
-        enableEditingMode: true,
+        enableEditingMode: isEditableNow,
         enableSorting: false,
         applyFormatterInEditing: true,
         formatter: (value) {
@@ -325,8 +450,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             ),
           );
         },
+        frozen: PlutoColumnFrozen.start,
       ),
-      for (int i = 1; i <= 4; i++)
+      for (int i = 1; i <= 5; i++)
         PlutoColumn(
           title: "$i",
           field: "stock_pagi_$i",
@@ -339,7 +465,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           enableContextMenu: false,
           enableDropToResize: false,
           enableSorting: false,
-          enableEditingMode: true,
+          enableEditingMode: isEditableNow,
           cellPadding: EdgeInsets.zero,
           renderer: (rendererContext) {
             final value = rendererContext.cell.value as int;
@@ -360,7 +486,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         title: "PART",
         field: "part",
         type: PlutoColumnType.text(),
-        width: 120,
+        width: 90,
         titleTextAlign: PlutoColumnTextAlign.center,
         textAlign: PlutoColumnTextAlign.center,
         backgroundColor: Colors.blue.shade200,
@@ -368,174 +494,132 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         enableContextMenu: false,
         enableDropToResize: false,
         enableSorting: false,
-        enableEditingMode: true,
+        enableEditingMode: isEditableNow,
         cellPadding: EdgeInsets.zero,
         renderer: (rendererContext) {
-          final isFirstRow = rendererContext.row.sortIdx == 0;
+          final part1 = rendererContext.cell.value?.toString() ?? '';
+          final part2 = rendererContext.row.cells['part_2']?.value?.toString() ?? '';
+          final targetPerJam = hourlyTargets.isNotEmpty ? (hourlyTargets.values.first * 2) : 0;
           
-          if (rendererContext.stateManager.isEditing && 
-              rendererContext.stateManager.currentCell == rendererContext.cell) {
-            if (isFirstRow) {
-              return Row(
-                children: [
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.all(2),
-                      child: TextField(
-                        controller: TextEditingController(
-                          text: rendererContext.cell.value?.toString() ?? ''
-                        ),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12),
-                        decoration: InputDecoration(
-                          border: OutlineInputBorder(
-                            borderSide: BorderSide(color: Colors.blue.shade800, width: 0.5),
-                          ),
-                          contentPadding: EdgeInsets.zero,
-                          isDense: true,
-                        ),
-                        onChanged: (value) {
-                          rendererContext.stateManager.changeCellValue(
-                            rendererContext.cell,
-                            value,
-                            notify: true,
-                          );
-                        },
-                        onSubmitted: (value) {
-                          rendererContext.stateManager.setCurrentCell(
-                            rendererContext.row.cells['part_2']!,
-                            rendererContext.row.sortIdx,
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  Container(
-                    width: 60,
-                    child: Padding(
-                      padding: EdgeInsets.all(2),
-                      child: TextField(
-                        controller: TextEditingController(
-                          text: rendererContext.row.cells['part_2']?.value?.toString() ?? ''
-                        ),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12),
-                        decoration: InputDecoration(
-                          border: OutlineInputBorder(
-                            borderSide: BorderSide(color: Colors.blue.shade800, width: 0.5),
-                          ),
-                          contentPadding: EdgeInsets.zero,
-                          isDense: true,
-                        ),
-                        onChanged: (value) {
-                          rendererContext.stateManager.changeCellValue(
-                            rendererContext.row.cells['part_2']!,
-                            value,
-                            notify: true,
-                          );
-                        },
-                        onSubmitted: (value) {
-                          rendererContext.stateManager.notifyListeners();
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            } else {
-              return Padding(
+          // Saat edit: tampilkan gabungan part1,part2 di semua baris
+          if (rendererContext.stateManager.isEditing && rendererContext.stateManager.currentCell == rendererContext.cell) {
+            String part1 = rendererContext.cell.value?.toString() ?? '';
+            String part2 = rendererContext.row.cells['part_2']?.value?.toString() ?? '';
+            String combined = part1.contains(',') ? part1 : (part2.isNotEmpty ? '$part1,$part2' : part1);
+            final controller = TextEditingController(text: combined);
+            return Container(
+              height: 30,
+              child: Padding(
                 padding: EdgeInsets.all(2),
                 child: TextField(
-                  controller: TextEditingController(
-                    text: rendererContext.cell.value?.toString() ?? ''
-                  ),
+                  controller: controller,
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12),
                   decoration: InputDecoration(
-                    border: OutlineInputBorder(
-                      borderSide: BorderSide(color: Colors.blue.shade800, width: 0.5),
-                    ),
+                    border: InputBorder.none,
                     contentPadding: EdgeInsets.zero,
                     isDense: true,
+                    hintText: 'part1,part2',
                   ),
                   onChanged: (value) {
                     rendererContext.stateManager.changeCellValue(
                       rendererContext.cell,
                       value,
-                      notify: true,
+                      notify: false,
                     );
                   },
                   onSubmitted: (value) {
+                    if (value.trim().isEmpty) {
+                      rendererContext.stateManager.changeCellValue(
+                        rendererContext.cell,
+                        '',
+                        notify: false,
+                      );
+                      rendererContext.stateManager.changeCellValue(
+                        rendererContext.row.cells['part_2']!,
+                        '',
+                        notify: false,
+                      );
+                    } else {
+                      final values = value.split(',');
+                      final p1 = values.isNotEmpty ? values[0].trim() : '';
+                      final p2 = values.length > 1 ? values[1].trim() : '';
+                      rendererContext.stateManager.changeCellValue(
+                        rendererContext.cell,
+                        p1,
+                        notify: false,
+                      );
+                      rendererContext.stateManager.changeCellValue(
+                        rendererContext.row.cells['part_2']!,
+                        p2,
+                        notify: false,
+                      );
+                    }
                     rendererContext.stateManager.notifyListeners();
+                    if (mounted) setState(() {});
                   },
                 ),
-              );
-            }
+              ),
+            );
           }
           
-          if (isFirstRow) {
-            return Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    height: 30,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        right: BorderSide(color: Colors.blue.shade800, width: 0.5),
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      rendererContext.cell.value?.toString() ?? '',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ),
-                Container(
-                  width: 60,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    border: Border(
-                      left: BorderSide(color: Colors.blue.shade800, width: 0.5),
-                    ),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    rendererContext.row.cells['part_2']?.value?.toString() ?? '',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ),
-              ],
-            );
-          } else {
+          // Tampilan normal dengan warna berdasarkan target
+          if (part2.isNotEmpty) {
+            final part1Value = int.tryParse(part1) ?? 0;
+            final part2Value = int.tryParse(part2) ?? 0;
+            // Jika tidak ada data, warna tetap biru
+            final color1 = part1.isEmpty || part1Value == 0 
+                ? Colors.blue.shade50 
+                : (part1Value >= targetPerJam ? Colors.green.shade200 : Colors.red.shade200);
+            final color2 = part2.isEmpty || part2Value == 0 
+                ? Colors.blue.shade50 
+                : (part2Value >= targetPerJam ? Colors.green.shade200 : Colors.red.shade200);
+            
             return Container(
               height: 30,
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.blue.shade800, width: 0.5),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      alignment: Alignment.center,
+                      child: Text(part1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      decoration: BoxDecoration(
+                        color: color1,
+                        border: Border(
+                          right: BorderSide(color: Colors.blue.shade800, width: 1),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      alignment: Alignment.center,
+                      child: Text(part2, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      decoration: BoxDecoration(
+                        color: color2,
+                      ),
+                    ),
+                  ),
+                ],
               ),
+            );
+          } else {
+            final part1Value = int.tryParse(part1) ?? 0;
+            // Jika tidak ada data, warna tetap biru
+            final color1 = part1.isEmpty || part1Value == 0 
+                ? Colors.blue.shade50 
+                : (part1Value >= targetPerJam ? Colors.green.shade200 : Colors.red.shade200);
+            
+            return Container(
+              height: 30,
               alignment: Alignment.center,
-              child: Text(
-                rendererContext.cell.value?.toString() ?? '',
-                style: TextStyle(fontSize: 12),
+              decoration: BoxDecoration(
+                color: color1,
               ),
+              child: Text(part1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
             );
           }
         },
-      ),
-      PlutoColumn(
-        title: "PART 2",
-        field: "part_2",
-        type: PlutoColumnType.text(),
-        width: 60,
-        titleTextAlign: PlutoColumnTextAlign.center,
-        textAlign: PlutoColumnTextAlign.center,
-        backgroundColor: Colors.blue.shade200,
-        enableColumnDrag: false,
-        enableContextMenu: false,
-        enableDropToResize: false,
-        enableSorting: false,
-        enableEditingMode: true,
-        hide: true,
       ),
       PlutoColumn(
         title: "Stock",
@@ -555,7 +639,12 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           final stock = rendererContext.cell.value as int;
           return Container(
             height: 30,
-            color: Colors.yellow.shade100,
+            decoration: BoxDecoration(
+              color: Colors.yellow.shade100,
+              border: Border(
+                right: BorderSide(color: Colors.blue.shade800, width: 1),
+              ),
+            ),
             child: Center(
               child: Text(
                 stock.toString(),
@@ -574,7 +663,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       PlutoColumnGroup(
         title: "Stock Pagi",
         backgroundColor: Colors.blue.shade300,
-        fields: ["stock_pagi_1", "stock_pagi_2", "stock_pagi_3", "stock_pagi_4", "part", "part_2", "stock_pagi_stock"],
+        fields: ["stock_pagi_1", "stock_pagi_2", "stock_pagi_3", "stock_pagi_4", "stock_pagi_5", "part", "part_2", "stock_pagi_stock"],
       ),
     ];
 
@@ -612,6 +701,95 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         ));
       }
 
+      // Tambah kolom PART (readonly, hasil perhitungan)
+      kumitateColumns.add(PlutoColumn(
+        title: "PART",
+        field: "${time}_part_calc",
+        type: PlutoColumnType.text(),
+        width: 90,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        textAlign: PlutoColumnTextAlign.center,
+        backgroundColor: Colors.blue.shade200,
+        enableColumnDrag: false,
+        enableContextMenu: false,
+        enableDropToResize: false,
+        enableSorting: false,
+        enableEditingMode: false,
+        cellPadding: EdgeInsets.zero,
+        renderer: (rendererContext) {
+          final value = rendererContext.cell.value?.toString() ?? '';
+          final targetPerJam = hourlyTargets[time] ?? 0.0;
+          final partTarget = targetPerJam * 2;
+          BoxDecoration baseDecoration = BoxDecoration(
+            color: Colors.blue.shade50,
+            border: Border(
+              right: BorderSide(color: Colors.blue.shade800, width: 0.5),
+            ),
+          );
+          if (value.isEmpty) {
+            return Container(
+              height: 30,
+              decoration: baseDecoration,
+              alignment: Alignment.center,
+              child: Text('', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black)),
+            );
+          }
+          if (value.contains(',')) {
+            final parts = value.split(',');
+            final part1 = int.tryParse(parts[0].trim()) ?? 0;
+            final part2 = parts.length > 1 ? int.tryParse(parts[1].trim()) ?? 0 : 0;
+            // Jika tidak ada data, warna tetap biru
+            final color1 = parts[0].trim().isEmpty || part1 == 0 
+                ? Colors.blue.shade50 
+                : (part1 >= partTarget ? Colors.green.shade200 : Colors.red.shade200);
+            final color2 = parts.length <= 1 || parts[1].trim().isEmpty || part2 == 0 
+                ? Colors.blue.shade50 
+                : (part2 >= partTarget ? Colors.green.shade200 : Colors.red.shade200);
+            return Container(
+              height: 30,
+              decoration: baseDecoration,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      alignment: Alignment.center,
+                      child: Text(parts[0].trim(), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black)),
+                      decoration: BoxDecoration(
+                        color: color1,
+                        border: Border(
+                          right: BorderSide(color: Colors.blue.shade800, width: 1),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      alignment: Alignment.center,
+                      child: Text(parts.length > 1 ? parts[1].trim() : '', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black)),
+                      decoration: BoxDecoration(
+                        color: color2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          } else {
+            final part1 = int.tryParse(value) ?? 0;
+            // Jika tidak ada data, warna tetap biru
+            final color1 = value.isEmpty || part1 == 0 
+                ? Colors.blue.shade50 
+                : (part1 >= partTarget ? Colors.green.shade200 : Colors.red.shade200);
+            return Container(
+              height: 30,
+              decoration: baseDecoration.copyWith(color: color1),
+              alignment: Alignment.center,
+              child: Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black)),
+            );
+          }
+        },
+      ));
+
       kumitateColumns.add(
         PlutoColumn(
           title: "Total",
@@ -629,14 +807,20 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           cellPadding: EdgeInsets.zero,
           renderer: (rendererContext) {
             final total = rendererContext.cell.value as int;
-            final target = hourlyTargets[time] ?? 0;
+            final target = hourlyTargets[time] ?? 0.0;
             final color = target > 0 
                 ? (total >= target ? Colors.green : Colors.red)
                 : Colors.black;
             
             return Container(
               height: 30,
-              color: Colors.yellow.shade100,
+              decoration: BoxDecoration(
+                color: Colors.yellow.shade100,
+                border: Border(
+                  left: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                  right: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                ),
+              ),
               child: Center(
                 child: Text(
                   total.toString(),
@@ -669,9 +853,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           cellPadding: EdgeInsets.zero,
           renderer: (rendererContext) {
             final cumulative = rendererContext.cell.value as int;
-            int cumulativeTarget = 0;
+            double cumulativeTarget = 0.0;
             for (var slot in timeSlots) {
-              cumulativeTarget += (hourlyTargets[slot] ?? 0);
+              cumulativeTarget += (hourlyTargets[slot] ?? 0.0);
               if (slot == time) break;
             }
             
@@ -681,7 +865,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             
             return Container(
               height: 30,
-              color: Colors.orange.shade100,
+              decoration: BoxDecoration(
+                color: Colors.orange.shade100,
+                border: Border(
+                  left: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                  right: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                ),
+              ),
               child: Center(
                 child: Text(
                   cumulative.toString(),
@@ -727,7 +917,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             
             return Container(
               height: 30,
-              color: Colors.blue.shade100,
+              decoration: BoxDecoration(
+                color: Colors.blue.shade100,
+                border: Border(
+                  left: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                  right: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                ),
+              ),
               child: Center(
                 child: Text(
                   stock.toString(),
@@ -743,12 +939,21 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         ),
       );
 
+      // Hitung target akumulatif
+      double cumulativeTarget = 0.0;
+      for (var slot in timeSlots) {
+        cumulativeTarget += (hourlyTargets[slot] ?? 0.0);
+        if (slot == time) break;
+      }
+      // Waktu mulai dari tengah, lalu spasi panjang, lalu target di ujung kanan
+      String groupTitle = ''.padLeft(60) + time + ''.padRight(40) + 'Target: ${cumulativeTarget.round()}';
       kumitateColumnGroups.add(
         PlutoColumnGroup(
-          title: time,
+          title: groupTitle,
           backgroundColor: Colors.blue.shade300,
           fields: [
             "${time}_1", "${time}_2", "${time}_3", "${time}_4", "${time}_5",
+            "${time}_part_calc",
             "${time}_total", "${time}_cumulative", "${time}_stock"
           ],
         ),
@@ -772,14 +977,20 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         cellPadding: EdgeInsets.zero,
         renderer: (rendererContext) {
           final total = rendererContext.cell.value as int;
-          final target = dailyTarget ?? 0;
+          final target = dailyTarget ?? 0.0;
           final color = target > 0 
               ? (total >= target ? Colors.green : Colors.red)
               : Colors.black;
               
           return Container(
             height: 30,
-            color: Colors.orange.shade200,
+            decoration: BoxDecoration(
+              color: Colors.orange.shade200,
+              border: Border(
+                left: BorderSide(color: Colors.blue.shade800, width: 0.5),
+                right: BorderSide(color: Colors.blue.shade800, width: 0.5),
+              ),
+            ),
             child: Center(
               child: Text(
                 total.toString(),
@@ -796,14 +1007,18 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     );
 
     kumitateRows = [];
-    
-    if (kumitateData.isNotEmpty) {
-      for (int i = 0; i < kumitateData.length; i++) {
-        final entry = kumitateData[i];
+    // Filter: hanya tampilkan process dengan sequence != 0
+    final filteredKumitateData = kumitateData.where((e) => (e['sequence'] ?? 0) != 0).toList();
+    if (filteredKumitateData.isNotEmpty) {
+      for (int i = 0; i < filteredKumitateData.length; i++) {
+        final entry = filteredKumitateData[i];
         final stockPagi = entry["stock_pagi"] as Map<String, dynamic>? ?? {
-          '1': 0, '2': 0, '3': 0, '4': 0, 'stock': 0
+          '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, 'stock': 0
         };
-        
+        final processName = (entry["process_name"] ?? '').toString();
+        final part1 = (entry["part"] ?? '').toString();
+        final part2 = (entry["part_2"] ?? '').toString();
+
         final cells = <String, PlutoCell>{
           "process_name": PlutoCell(value: entry["process_name"]),
           "type": PlutoCell(value: "Kumitate"),
@@ -816,6 +1031,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           "stock_pagi_2": PlutoCell(value: stockPagi['2'] ?? 0),
           "stock_pagi_3": PlutoCell(value: stockPagi['3'] ?? 0),
           "stock_pagi_4": PlutoCell(value: stockPagi['4'] ?? 0),
+          "stock_pagi_5": PlutoCell(value: stockPagi['5'] ?? 0),
           "part": PlutoCell(value: entry["part"] ?? ""),
           "part_2": PlutoCell(value: entry["part_2"] ?? ""),
           "stock_pagi_stock": PlutoCell(value: stockPagi['stock'] ?? 0),
@@ -832,6 +1048,58 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             cells["${time}_$i"] = PlutoCell(value: count);
           }
 
+          // PART CALCULATION (readonly, sesuai rumus, hanya jika part di stock pagi ada)
+          String partCalc = '';
+          // Helper: cari proses OUT terkait di partData
+          int getPartOutAccum(String outName) {
+            final out = partData.firstWhere(
+              (e) => (e['process_name'] ?? '').toString().toLowerCase() == outName.toLowerCase(),
+              orElse: () => {},
+            );
+            int cumulativeValue = (out["${time}_cumulative"] as int?) ?? 0;
+            
+            // Jika proses adalah Sode atau Cuff, bagi nilai cumulative dengan 2
+            if (dividedByTwoProcesses.contains(outName)) {
+              cumulativeValue = (cumulativeValue / 2).floor();
+            }
+            
+            return cumulativeValue;
+          }
+          int getThisAccum() => (entry["${time}_cumulative"] as int?) ?? 0;
+          bool hasPart1 = part1.isNotEmpty && part1 != '0';
+          bool hasPart2 = part2.isNotEmpty && part2 != '0';
+          int pagi1 = int.tryParse(part1) ?? 0;
+          int pagi2 = int.tryParse(part2) ?? 0;
+          if (hasPart1 || hasPart2) {
+            if (processName.contains("Maekata")) {
+              int maemiOut = getPartOutAccum('Maemi OUT');
+              int ushiroOut = getPartOutAccum('Ushiro OUT');
+              int thisAccum = getThisAccum();
+              if (hasPart1) {
+                partCalc = '${pagi1 + maemiOut - thisAccum}';
+              }
+              if (hasPart2) {
+                if (partCalc.isNotEmpty) partCalc += ', ';
+                partCalc += '${pagi2 + ushiroOut - thisAccum}';
+              }
+            } else if (processName.contains("Eri")) {
+              int eriOut = getPartOutAccum('Eri OUT');
+              int thisAccum = getThisAccum();
+              if (hasPart1) partCalc = '${pagi1 + eriOut - thisAccum}';
+            } else if (processName.contains("Sode")) {
+              int sodeOut = getPartOutAccum('Sode OUT');
+              int thisAccum = getThisAccum();
+              if (hasPart1) partCalc = '${pagi1 + sodeOut - thisAccum}';
+            } else if (processName.contains("Cuff")) {
+              int cuffOut = getPartOutAccum('Cuff OUT');
+              int thisAccum = getThisAccum();
+              if (hasPart1) partCalc = '${pagi1 + cuffOut - thisAccum}';
+            }
+          } else {
+            partCalc = '';
+          }
+          cells["${time}_part_calc"] = PlutoCell(value: partCalc);
+
           grandTotal += timeSlotTotal;
           cells["${time}_total"] = PlutoCell(value: timeSlotTotal);
           cells["${time}_cumulative"] = PlutoCell(value: entry["${time}_cumulative"] ?? 0);
@@ -845,7 +1113,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             final previousProcess = kumitateData[i-1];
             final previousCumulative = previousProcess["${time}_cumulative"] ?? 0;
             final currentCumulative = entry["${time}_cumulative"] ?? 0;
-            final stockValue = stockPagi['stock'] + previousCumulative - currentCumulative;
+            // stock_pagi_stock = stock_pagi_1 + ... + stock_pagi_5
+            final pagiStock = (cells['stock_pagi_1']?.value ?? 0) + (cells['stock_pagi_2']?.value ?? 0) + (cells['stock_pagi_3']?.value ?? 0) + (cells['stock_pagi_4']?.value ?? 0) + (cells['stock_pagi_5']?.value ?? 0);
+            cells["stock_pagi_stock"] = PlutoCell(value: pagiStock);
+            final stockValue = pagiStock + previousCumulative - currentCumulative;
             cells["${time}_stock"] = PlutoCell(value: stockValue);
           }
         }
@@ -857,12 +1128,24 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   }
 
   void _buildPartColumnsAndRows() {
+    double cumulativeTarget = 0.0;
+    partColumnGroups = [
+      for (final time in timeSlots)
+        (() {
+          cumulativeTarget += (hourlyTargets[time] ?? 0.0);
+          return PlutoColumnGroup(
+            title: '${cumulativeTarget.round()}',
+            backgroundColor: Colors.blue.shade300,
+            fields: ['${time}_cumulative'],
+          );
+        })(),
+    ];
     partColumns = [
       PlutoColumn(
         title: "PROCESS",
         field: "process_name",
         type: PlutoColumnType.text(),
-        width: 230,
+        width: 260,
         titleTextAlign: PlutoColumnTextAlign.center,
         backgroundColor: Colors.blue.shade300,
         enableColumnDrag: false,
@@ -871,30 +1154,46 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         enableEditingMode: false,
         renderer: (ctx) {
           final processName = ctx.cell.value.toString();
-          return Row(
-            children: [
-              Expanded(child: Text(processName)),
-              IconButton(
-                icon: Icon(Icons.bar_chart, size: 18, color: Colors.blue),
-                onPressed: () => showDialog(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    title: Text('Grafik $processName (Part)'),
-                    content: Container(
-                      width: 1100,
-                      height: 900,
-                      child: buildChart(processName, 'Part'),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: Text("Tutup"),
-                      ),
+          final rowColor = getPartRowColor(processName);
+          final hiragana = partProcessHiragana[processName];
+          return Container(
+            color: rowColor,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(processName, style: TextStyle(fontWeight: FontWeight.bold)),
+                      if (hiragana != null) ...[
+                        SizedBox(width: 6),
+                        Text('($hiragana)', style: TextStyle(fontSize: 13, color: Colors.black)),
+                      ],
                     ],
                   ),
                 ),
-              ),
-            ],
+                IconButton(
+                  icon: Icon(Icons.bar_chart, size: 18, color: Colors.blue),
+                  onPressed: () => showDialog(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: Text('Grafik $processName (Part)'),
+                      content: Container(
+                        width: 1100,
+                        height: 900,
+                        child: buildChart(processName, 'Part'),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: Text("Tutup"),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           );
         },
       ),
@@ -904,7 +1203,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           title: time,
           field: "${time}_cumulative",
           type: PlutoColumnType.number(),
-          width: 60,
+          width: 70,
           titleTextAlign: PlutoColumnTextAlign.center,
           textAlign: PlutoColumnTextAlign.center,
           backgroundColor: Colors.blue.shade300,
@@ -916,9 +1215,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           cellPadding: EdgeInsets.zero,
           renderer: (rendererContext) {
             final cumulative = rendererContext.cell.value as int;
-            int cumulativeTarget = 0;
+            double cumulativeTarget = 0.0;
             for (var slot in timeSlots) {
-              cumulativeTarget += (hourlyTargets[slot] ?? 0);
+              cumulativeTarget += (hourlyTargets[slot] ?? 0.0);
               if (slot == time) break;
             }
             
@@ -1081,93 +1380,40 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     final maxLines = type == 'Part' ? 2 : 5;
 
     final lineBarsData = <LineChartBarData>[];
-    
-    for (int lineNum = 1; lineNum <= maxLines; lineNum++) {
-      bool hasData = false;
-      final spots = <FlSpot>[FlSpot(0, 0)];
-      
-      for (int t = 0; t < timeSlots.length; t++) {
-        final value = (process["${timeSlots[t]}_$lineNum"] as num?)?.toDouble() ?? 0;
-        if (value > 0) hasData = true;
-        spots.add(FlSpot((t+1).toDouble(), value));
-      }
-      
-      if (hasData) {
-        lineBarsData.add(
-          LineChartBarData(
-            spots: spots,
-            isCurved: false,
-            color: lineColors[lineNum - 1],
-            barWidth: 3,
-            isStrokeCapRound: false,
-            dotData: FlDotData(
-              show: true,
-              getDotPainter: (spot, percent, barData, index) {
-                return FlDotCirclePainter(
-                  radius: 5,
-                  color: lineColors[lineNum - 1],
-                  strokeWidth: 2,
-                  strokeColor: Colors.white,
-                );
-              },
+    if (type == 'Kumitate' || type == 'Part') {
+      // Untuk Kumitate dan Part, tampilkan data per nomor line saja (bukan akumulatif)
+      for (int lineNum = 1; lineNum <= maxLines; lineNum++) {
+        bool hasData = false;
+        final spots = <FlSpot>[FlSpot(0, 0)];
+        for (int t = 0; t < timeSlots.length; t++) {
+          final value = (process["${timeSlots[t]}_$lineNum"] as num?)?.toDouble() ?? 0;
+          if (value > 0) hasData = true;
+          spots.add(FlSpot((t+1).toDouble(), value));
+        }
+        if (hasData) {
+          lineBarsData.add(
+            LineChartBarData(
+              spots: spots,
+              isCurved: false,
+              color: lineColors[lineNum - 1],
+              barWidth: 3,
+              isStrokeCapRound: false,
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, percent, barData, index) {
+                  return FlDotCirclePainter(
+                    radius: 5,
+                    color: lineColors[lineNum - 1],
+                    strokeWidth: 2,
+                    strokeColor: Colors.white,
+                  );
+                },
+              ),
+              belowBarData: BarAreaData(show: false),
             ),
-            belowBarData: BarAreaData(show: false),
-          ),
-        );
+          );
+        }
       }
-    }
-
-    final cumulativeSpots = <FlSpot>[FlSpot(0, 0)];
-    for (int t = 0; t < timeSlots.length; t++) {
-      double value = (process["${timeSlots[t]}_cumulative"] as num?)?.toDouble() ?? 0;
-      if (type == 'Part' && dividedByTwoProcesses.contains(processName)) {
-        value = (value / 2).floorToDouble();
-      }
-      cumulativeSpots.add(FlSpot((t+1).toDouble(), value));
-    }
-    
-    lineBarsData.add(
-      LineChartBarData(
-        spots: cumulativeSpots,
-        isCurved: false,
-        color: Colors.black,
-        barWidth: 3,
-        isStrokeCapRound: false,
-        dotData: FlDotData(
-          show: true,
-          getDotPainter: (spot, percent, barData, index) {
-            return FlDotCirclePainter(
-              radius: 5,
-              color: Colors.black,
-              strokeWidth: 2,
-              strokeColor: Colors.white,
-            );
-          },
-        ),
-        belowBarData: BarAreaData(show: false),
-      ),
-    );
-
-    if (dailyTarget != null) {
-      final targetSpots = <FlSpot>[FlSpot(0, 0)];
-      double cumulativeTarget = 0;
-      for (int t = 0; t < timeSlots.length; t++) {
-        cumulativeTarget += (hourlyTargets[timeSlots[t]] ?? 0).toDouble();
-        targetSpots.add(FlSpot((t+1).toDouble(), cumulativeTarget));
-      }
-      
-      lineBarsData.add(
-        LineChartBarData(
-          spots: targetSpots,
-          isCurved: false,
-          color: Colors.red,
-          barWidth: 2,
-          isStrokeCapRound: false,
-          dotData: FlDotData(show: false),
-          dashArray: [5, 5],
-          belowBarData: BarAreaData(show: false),
-        ),
-      );
     }
 
     return Padding(
@@ -1180,38 +1426,38 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               alignment: WrapAlignment.center,
               spacing: 8.0,
               runSpacing: 4.0,
-              children: List.generate(lineBarsData.length, (index) {
-                final colors = [
-                  ...lineColors, Colors.black, Colors.red
-                ];
-                final labels = [
-                  'Line 1', 'Line 2', 'Line 3', 'Line 4', 'Line 5', 
-                  'Akumulatif', 'Target'
-                ];
-                
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: colors[index],
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1),
+              children: [
+                ...List.generate(lineBarsData.length, (index) {
+                  final colors = [
+                    ...lineColors
+                  ];
+                  final labels = [
+                    'Line 1', 'Line 2', 'Line 3', 'Line 4', 'Line 5'
+                  ];
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: colors[index],
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      labels[index],
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                      const SizedBox(width: 4),
+                      Text(
+                        labels[index],
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                  ],
-                );
-              }),
+                    ],
+                  );
+                }),
+              ],
             ),
           ),
           Expanded(
@@ -1232,22 +1478,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                             );
                           }
                           final timeSlot = timeSlots[timeIndex - 1];
-                          if (spot.barIndex < maxLines) {
-                            return LineTooltipItem(
-                              'Line ${spot.barIndex + 1}: ${spot.y.toInt()}\n$timeSlot',
-                              const TextStyle(color: Colors.white),
-                            );
-                          } else if (spot.barIndex == maxLines) {
-                            return LineTooltipItem(
-                              'Akumulatif: ${spot.y.toInt()}\n$timeSlot',
-                              const TextStyle(color: Colors.white),
-                            );
-                          } else {
-                            return LineTooltipItem(
-                              'Target: ${spot.y.toInt()}\n$timeSlot',
-                              const TextStyle(color: Colors.white),
-                            );
-                          }
+                          return LineTooltipItem(
+                            'Line ${spot.barIndex + 1}: ${spot.y.toInt()}\n$timeSlot',
+                            const TextStyle(color: Colors.white),
+                          );
                         }).toList();
                       },
                     ),
@@ -1399,7 +1633,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
   Future<void> _saveToFirebase() async {
     setState(() => isSaving = true);
-    try {
+  try {
       final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
       final batch = FirebaseFirestore.instance.batch();
       
@@ -1442,10 +1676,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             .doc('Kumitate')
             .collection('Process')
             .doc(processName);
-            
+
         int stock20min = 0;
         final cellValue = row.cells['stock_20min']?.value;
-        
         if (cellValue is int) {
           stock20min = cellValue;
         } else if (cellValue is String) {
@@ -1461,15 +1694,20 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           '3': row.cells['stock_pagi_3']?.value as int? ?? 0,
           '4': row.cells['stock_pagi_4']?.value as int? ?? 0,
           'stock': (row.cells['stock_pagi_1']?.value as int? ?? 0) +
-                   (row.cells['stock_pagi_2']?.value as int? ?? 0) +
-                   (row.cells['stock_pagi_3']?.value as int? ?? 0) +
-                   (row.cells['stock_pagi_4']?.value as int? ?? 0),
+                  (row.cells['stock_pagi_2']?.value as int? ?? 0) +
+                  (row.cells['stock_pagi_3']?.value as int? ?? 0) +
+                  (row.cells['stock_pagi_4']?.value as int? ?? 0),
         };
-        
-        // Get PART values
-        final partValue = row.cells['part']?.value as String? ?? '';
-        final partValue2 = row.cells['part_2']?.value as String? ?? '';
-        
+
+        // PART: logika split part1,part2 berlaku untuk semua baris
+        String partValue = row.cells['part']?.value as String? ?? '';
+        String partValue2 = row.cells['part_2']?.value as String? ?? '';
+        if (partValue.contains(',')) {
+          final values = partValue.split(',');
+          partValue = values.isNotEmpty ? values[0].trim() : '';
+          partValue2 = values.length > 1 ? values[1].trim() : '';
+        }
+
         final updateData = {
           'stock_20min': stock20min,
           'stock_pagi': stockPagi,
@@ -1478,7 +1716,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             'part2': partValue2,
           },
         };
-        
         batch.update(docRef, updateData);
       }
       
@@ -1497,6 +1734,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         );
       }
     } finally {
+      // Setelah selesai simpan, refresh data
+      await loadData();
+      await _loadTargets();
       setState(() => isSaving = false);
     }
   }
@@ -1549,7 +1789,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           IconButton(
             icon: Icon(Icons.save, color: Colors.white),
             onPressed: isSaving ? null : _saveToFirebase,
-            tooltip: "Simpan Stock Pagi dan 20 menit",
+            tooltip: "Save Data",
           ),
           IconButton(
             icon: Icon(Icons.file_download, color: Colors.white),
@@ -1661,7 +1901,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Text(
-                                          'Target: ${dailyTarget ?? '-'}  ',
+                                          'Target: ${dailyTarget != null ? dailyTarget!.round() : '-'}  ',
                                           style: TextStyle(
                                             fontSize: 20,
                                             fontWeight: FontWeight.bold,
@@ -1669,7 +1909,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                                           ),
                                         ),
                                         Text(
-                                          'Per Jam: ${dailyTarget != null ? (dailyTarget! ~/ 8) : '-'}',
+                                          'Per Jam: ${dailyTarget != null ? (dailyTarget! / 8).round() : '-'}',
                                           style: TextStyle(
                                             fontSize: 20,
                                             color: Colors.black87,
@@ -1718,7 +1958,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                           title: 'PART',
                           columns: partColumns,
                           rows: partRows,
-                          columnGroups: [],
+                          columnGroups: partColumnGroups,
                         ),
                     ],
                   ),
@@ -1790,6 +2030,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                   enableMoveHorizontalInEditing: true,
                   enterKeyAction: PlutoGridEnterKeyAction.editingAndMoveDown,
                 ),
+                // Pewarnaan baris khusus untuk PART
+                rowColorCallback: title == 'PART'
+                    ? (PlutoRowColorContext rowContext) {
+                        final processName = rowContext.row.cells['process_name']?.value?.toString() ?? '';
+                        return getPartRowColor(processName) ?? Colors.transparent;
+                      }
+                    : null,
                 onChanged: (PlutoGridOnChangedEvent event) {
                   if (event.column.field == 'belumKensa' || 
                       event.column.field == 'stock_20min' ||

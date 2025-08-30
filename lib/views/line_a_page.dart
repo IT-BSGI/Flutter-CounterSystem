@@ -23,6 +23,22 @@ class _LineAPageState extends State<LineAPage> {
   int _lastStableTarget = 0;
   StreamSubscription<DocumentSnapshot>? _planSubscription;
   StreamSubscription<QuerySnapshot>? _processSubscription;
+  
+  // New variables for clock and countdown
+  String _currentTime = '';
+  String _countdown = '';
+  bool _shouldBlink = false;
+  final List<TimeOfDay> _hourlyIntervals = [
+    TimeOfDay(hour: 8, minute: 30),
+    TimeOfDay(hour: 9, minute: 30),
+    TimeOfDay(hour: 10, minute: 30),
+    TimeOfDay(hour: 11, minute: 30),
+    TimeOfDay(hour: 12, minute: 30),
+    TimeOfDay(hour: 13, minute: 30),
+    TimeOfDay(hour: 14, minute: 30),
+    TimeOfDay(hour: 15, minute: 30),
+    TimeOfDay(hour: 16, minute: 30),
+  ];
 
   // Work hours configuration
   final _startWorkTime = TimeOfDay(hour: 7, minute: 30);
@@ -34,10 +50,12 @@ class _LineAPageState extends State<LineAPage> {
   void initState() {
     super.initState();
     _setupStreams();
+    _updateTime(); // Initialize time
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!_isLoading) {
         _calculateCurrentTarget();
         _updateDisplayValues();
+        _updateTime(); // Update time every second
       }
     });
   }
@@ -48,6 +66,57 @@ class _LineAPageState extends State<LineAPage> {
     _planSubscription?.cancel();
     _processSubscription?.cancel();
     super.dispose();
+  }
+
+  void _updateTime() {
+    final now = DateTime.now();
+    setState(() {
+      _currentTime = DateFormat('HH:mm:ss').format(now);
+      _updateCountdown(now);
+    });
+  }
+
+  void _updateCountdown(DateTime now) {
+    final currentTime = TimeOfDay.fromDateTime(now);
+    
+    // Find the next interval
+    TimeOfDay? nextInterval;
+    for (final interval in _hourlyIntervals) {
+      if (interval.hour > currentTime.hour || 
+          (interval.hour == currentTime.hour && interval.minute > currentTime.minute)) {
+        nextInterval = interval;
+        break;
+      }
+    }
+    
+    if (nextInterval == null) {
+      _countdown = 'End of Day';
+      _shouldBlink = false;
+      return;
+    }
+    
+    // Calculate time until next interval
+    final nextDateTime = DateTime(
+      now.year, 
+      now.month, 
+      now.day, 
+      nextInterval.hour, 
+      nextInterval.minute
+    );
+    
+    final difference = nextDateTime.difference(now);
+    
+    if (difference.isNegative) {
+      _countdown = '00:00';
+      _shouldBlink = true;
+    } else {
+      final minutes = (difference.inMinutes.remainder(60)).toString().padLeft(2, '0');
+      final seconds = (difference.inSeconds.remainder(60)).toString().padLeft(2, '0');
+      _countdown = '$minutes:$seconds';
+      
+      // Check if less than 1 minute
+      _shouldBlink = difference.inMinutes < 1;
+    }
   }
 
   void _setupStreams() {
@@ -197,41 +266,67 @@ class _LineAPageState extends State<LineAPage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
     
-    // Ukuran font sangat besar (25% dari tinggi layar)
-    final fontSize = screenHeight * 0.25;
+    final fontSize = screenHeight * 0.28;
     final clampedFontSize = fontSize.clamp(60.0, 220.0);
 
-    // Padding minimal
     final horizontalPadding = screenWidth * 0.04;
-    final verticalItemPadding = screenHeight * 0.005; // Jarak sangat rapat
-
+    final verticalItemPadding = screenHeight * 0.005; 
     return Scaffold(
       backgroundColor: Colors.blue.shade100,
       appBar: AppBar(
-        title: Text(
-          'Line A Production - ${DateFormat('yyyy-MM-dd').format(widget.date)}',
-          style: TextStyle(
-            fontSize: screenWidth < 600 ? 22 : 26,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              _currentTime,
+              style: TextStyle(
+                fontSize: screenWidth < 600 ? 50 : 55, 
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            
+            Text(
+              'LINE A',
+              style: TextStyle(
+                fontSize: screenWidth < 600 ? 50 : 55, 
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.only(right: 50.0),
+              child: _shouldBlink
+                  ? Animate(
+                      effects: [FadeEffect(duration: 500.ms)],
+                      onPlay: (controller) => controller.repeat(reverse: true),
+                      child: Text(
+                        _countdown,
+                        style: TextStyle(
+                          fontSize: screenWidth < 600 ? 50 : 55, 
+                          color: Colors.red, 
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  : Text(
+                      _countdown,
+                      style: TextStyle(
+                        fontSize: screenWidth < 600 ? 50 : 55, 
+                        color: Colors.yellow[100],
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+            ),
+          ],
         ),
-        centerTitle: true,
+        centerTitle: false,
         backgroundColor: Colors.blue.shade700,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: () {
-              _planSubscription?.cancel();
-              _processSubscription?.cancel();
-              _setupStreams();
-            },
-          ),
-        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -255,12 +350,14 @@ class _LineAPageState extends State<LineAPage> {
                   ),
                 )
               : Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: screenWidth * 0.01,
-                    vertical: screenHeight * 0.005,
+                  padding: EdgeInsets.only( 
+                    left: screenWidth * 0.01,
+                    right: screenWidth * 0.01,
+                    top: screenHeight * 0.005,
+                    bottom: screenHeight * 0.001, 
                   ),
                   child: SizedBox(
-                    height: screenHeight * 0.88, // Hampir memenuhi layar
+                    height: screenHeight * 0.88, 
                     child: Card(
                       elevation: 12,
                       shape: RoundedRectangleBorder(
@@ -306,8 +403,11 @@ class _LineAPageState extends State<LineAPage> {
     required String value,
     required double fontSize,
   }) {
+    // Ukuran font untuk label: 70% dari font data
+    final labelFontSize = fontSize * 0.7;
+    
     return SizedBox(
-      height: fontSize * 1.05, // Tinggi baris sangat ketat
+      height: fontSize, 
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -315,17 +415,17 @@ class _LineAPageState extends State<LineAPage> {
           Text(
             '$label:', 
             style: TextStyle(
-              fontSize: fontSize,
+              fontSize: labelFontSize,
               color: Colors.black,
               fontWeight: FontWeight.bold,
-              height: 0.9, // Line height sangat ketat
+              height: 0.9,
             ),
           ),
           Text(
             value,
             style: TextStyle(
               fontSize: fontSize,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w900, 
               color: Colors.red,
               height: 0.9,
             ),

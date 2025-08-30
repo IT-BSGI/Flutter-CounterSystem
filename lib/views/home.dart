@@ -21,21 +21,81 @@ class _HomePageState extends State<HomePage> {
   bool _showRightArrow = false;
   bool _isSlideshowRunning = true;
   String? _pausedLine;
-  Map<String, int> _targets = {};
+  Map<String, double> _targets = {};
   Map<String, StreamSubscription> _streamSubscriptions = {};
 
   // Updated time slots to match counter_table_screen.dart
   final List<String> timeSlots = [
     "08:30", "09:30", "10:30", "11:30", "13:30", 
-    "14:30", "15:30", "16:30", "OT"
+    "14:30", "15:30", "16:30", "17:55", "18:55", "19:55",
   ];
 
   final Map<String, String> timeRangeMap = {
-    "06:30": "08:30", "07:30": "08:30", "08:30": "09:30",
-    "09:30": "10:30", "10:30": "11:30", "11:30": "13:30",
-    "12:30": "13:30", "13:30": "14:30", "14:30": "15:30",
-    "15:30": "16:30", "16:30": "OT", "17:30": "OT",
-    "18:30": "OT", "19:30": "OT",
+    "06:30": "08:30", 
+    "06:45": "08:30", 
+    "07:00": "08:30", 
+    "07:15": "08:30", 
+    "07:30": "08:30", 
+    "07:45": "08:30", 
+    "08:00": "08:30",
+    "08:15": "08:30",
+
+    "08:30": "09:30",
+    "08:45": "09:30",
+    "09:00": "09:30",
+    "09:15": "09:30",
+
+    "09:30": "10:30",
+    "09:45": "10:30",
+    "10:00": "10:30",
+    "10:15": "10:30",
+
+    "10:30": "11:30",
+    "10:45": "11:30",
+    "11:00": "11:30",
+    "11:15": "11:30",
+
+    "11:30": "13:30",
+    "11:45": "13:30",
+    "12:00": "13:30",
+    "12:15": "13:30",
+    "12:30": "13:30",
+    "12:45": "13:30",
+    "13:00": "13:30",
+    "13:15": "13:30",
+
+    "13:30": "14:30",
+    "13:45": "14:30",
+    "14:00": "14:30",
+    "14:15": "14:30",
+    
+    "14:30": "15:30",
+    "14:45": "15:30",
+    "15:00": "15:30",
+    "15:15": "15:30",
+
+    "15:30": "16:30", 
+    "15:45": "16:30",
+    "16:00": "16:30",
+    "16:15": "16:30",
+
+    "16:30": "17:55",
+    "16:45": "17:55",
+    "17:00": "17:55",
+    "17:15": "17:55",
+    "17:30": "17:55",
+    "17:45": "17:55",
+
+    "18:00": "18:55",
+    "18:15": "18:55",
+    "18:30": "18:55",
+    "18:45": "18:55",
+
+    "19:00": "19:55",
+    "19:15": "19:55",
+    "19:30": "19:55",
+    "19:45": "19:55",
+    "20:00": "19:55",
   };
 
   @override
@@ -124,7 +184,9 @@ class _HomePageState extends State<HomePage> {
 
       if (snapshot.exists) {
         Map<String, dynamic>? data = snapshot.data() as Map<String, dynamic>?;
-        int target = data?['target_$line'] as int? ?? 0;
+        double target = data?['target_$line'] is num 
+            ? (data?['target_$line'] as num).toDouble() 
+            : 0.0;
         
         setState(() {
           _targets[line] = target;
@@ -443,7 +505,8 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildHeader(String line, List<Map<String, dynamic>> processes) {
     String currentProcess = selectedProcesses[line] ?? '';
-    int? target = _targets[line];
+    double? target = _targets[line];
+    double targetPerHour = target != null ? target / 8 : 0.0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -491,12 +554,24 @@ class _HomePageState extends State<HomePage> {
               ),
               if (target != null) ...[
                 SizedBox(width: 16),
-                Text(
-                  'Target: $target',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.blue.shade800,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Target: ${target.round()}',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.blue.shade800,
+                      ),
+                    ),
+                    Text(
+                      'Per Jam: ${targetPerHour.round()}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.blue.shade600,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ],
@@ -544,7 +619,7 @@ class _HomePageState extends State<HomePage> {
     );
     
     Map<String, int> data = processData['cumulative'];
-    int? target = _targets[line];
+    double? target = _targets[line];
     Map<String, dynamic> rawData = processData['raw_data'];
 
     List<FlSpot> spots = [];
@@ -557,25 +632,43 @@ class _HomePageState extends State<HomePage> {
       targetSpots.add(FlSpot(0, 0));
     }
 
+    // Calculate cumulative target for each time slot
+    double cumulativeTarget = 0.0;
+    Map<String, double> hourlyTargets = {};
+    
+    if (target != null) {
+      double targetPerHour = target / 8;
+      
+      hourlyTargets = {
+        '08:30': targetPerHour,
+        '09:30': targetPerHour,
+        '10:30': targetPerHour,
+        '11:30': targetPerHour,
+        '13:30': targetPerHour,
+        '14:30': targetPerHour,
+        '15:30': targetPerHour,
+        '16:30': targetPerHour,
+        '17:55': 0.0,
+        '18:55': 0.0,
+        '19:55': 0.0,
+      };
+      
+      // Add spots for target line
+      for (int i = 0; i < timeSlots.length; i++) {
+        String time = timeSlots[i];
+        cumulativeTarget += (hourlyTargets[time] ?? 0.0);
+        targetSpots.add(FlSpot((i+1).toDouble(), cumulativeTarget));
+      }
+    }
+
     // Add spots for each time slot
     for (int i = 0; i < timeSlots.length; i++) {
       String time = timeSlots[i];
       int value = data[time] ?? 0;
       spots.add(FlSpot((i+1).toDouble(), value.toDouble()));
       
-      if (target != null) {
-        // Calculate target value (linear progression)
-        // Only show target up to 15:30 - 16:29 (7th time slot)
-        if (i < 7) { // 0-6 index is up to 15:30 - 16:29
-          double targetValue = (target * (i+1) / 8).toDouble(); // Divide by 8 for 8 hours
-          targetSpots.add(FlSpot((i+1).toDouble(), targetValue));
-        } else if (i == 7) { // Last point for target line
-          targetSpots.add(FlSpot((i+1).toDouble(), target.toDouble()));
-        }
-      }
-      
       if (value > maxY) maxY = value.toDouble();
-      if (target != null && target > maxY) maxY = target.toDouble();
+      if (target != null && cumulativeTarget > maxY) maxY = cumulativeTarget;
     }
 
     if (maxY == 0) maxY = 10;
