@@ -13,6 +13,113 @@ class CounterTableScreen extends StatefulWidget {
 }
 
 class _CounterTableScreenState extends State<CounterTableScreen> {
+  // Untuk tabel Proses (akumulatif 12345 per timeslot)
+  List<PlutoColumn> prosesColumns = [];
+  List<PlutoRow> prosesRows = [];
+
+  // Build tabel Proses: timeslot, 1,2,3,4,5, total akumulatif per timeslot
+  void _buildProsesTable() {
+    // Kolom: proses, lalu untuk setiap timeslot ada subkolom 1-5
+    prosesColumns = [
+      PlutoColumn(
+        title: "PROCESS",
+        field: "process_name",
+        type: PlutoColumnType.text(),
+        width: 260, // sama seperti kumitate
+        titleTextAlign: PlutoColumnTextAlign.center,
+        backgroundColor: Colors.blue.shade300,
+        enableColumnDrag: false,
+        enableContextMenu: false,
+        enableSorting: false,
+        enableEditingMode: false,
+        enableDropToResize: false,
+        renderer: (ctx) {
+          return Container(
+            alignment: Alignment.centerLeft,
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              ctx.cell.value.toString(),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14), // disamakan dengan kumitate/part
+            ),
+          );
+        },
+      ),
+    ];
+    // Untuk group kolom timeslot
+    List<PlutoColumnGroup> prosesColumnGroups = [];
+  double cumulativeTarget = 0.0;
+  for (final time in visibleTimeSlots) {
+      // Tambah subkolom 1-5 untuk setiap timeslot
+      for (int i = 1; i <= 5; i++) {
+        prosesColumns.add(
+          PlutoColumn(
+            title: "$i",
+            field: "${time}_$i",
+            type: PlutoColumnType.number(),
+            width: 50, // sama seperti kumitate
+            titleTextAlign: PlutoColumnTextAlign.center,
+            textAlign: PlutoColumnTextAlign.center,
+            backgroundColor: Colors.blue.shade200,
+            enableColumnDrag: false,
+            enableContextMenu: false,
+            enableSorting: false,
+            enableEditingMode: false,
+            enableDropToResize: false, // tidak bisa resize
+            renderer: (ctx) {
+              return Container(
+                alignment: Alignment.center,
+                child: Text(
+                  ctx.cell.value.toString(),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold), // sama seperti kumitate
+                ),
+              );
+            },
+          ),
+        );
+      }
+      // Group kolom timeslot (dengan target)
+      cumulativeTarget += (hourlyTargets[time] ?? 0.0);
+      // Format header: jam di tengah, spasi, lalu Target akumulatif sejajar kanan (mirip kumitate)
+      String groupTitle = ''.padLeft(25) + time + ''.padRight(15) + ':${cumulativeTarget.round()}';
+      prosesColumnGroups.add(
+        PlutoColumnGroup(
+          title: groupTitle,
+          backgroundColor: Colors.blue.shade300,
+          fields: [for (int i = 1; i <= 5; i++) "${time}_$i"],
+        ),
+      );
+    }
+
+    // Baris: proses dari kumitate, urut sequence
+    prosesRows = [];
+    final prosesList = List<Map<String, dynamic>>.from(kumitateData);
+    prosesList.sort((a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
+    for (final proses in prosesList) {
+      final cells = <String, PlutoCell>{
+        "process_name": PlutoCell(value: proses["process_name"] ?? ""),
+      };
+  for (final time in visibleTimeSlots) {
+        for (int i = 1; i <= 5; i++) {
+          // int value = (proses["${time}_$i"] as int? ?? 0); // Removed unused variable
+          // Akumulatif: jumlahkan dari jam pertama sampai jam ini
+          int akumulatif = 0;
+          for (final t in visibleTimeSlots) {
+            if (t.compareTo(time) > 0) break;
+            akumulatif += (proses["${t}_$i"] as int? ?? 0);
+            if (t == time) break;
+          }
+          cells["${time}_$i"] = PlutoCell(value: akumulatif);
+        }
+      }
+      prosesRows.add(PlutoRow(cells: cells));
+    }
+
+    // Simpan group kolom untuk digunakan di widget
+    this.prosesColumns = prosesColumns;
+    this.prosesRows = prosesRows;
+    this.prosesColumnGroups = prosesColumnGroups;
+  }
+  List<PlutoColumnGroup> prosesColumnGroups = [];
   bool get isEditableNow {
     final now = DateTime.now();
     final isToday = selectedDate.year == now.year && selectedDate.month == now.month && selectedDate.day == now.day;
@@ -67,6 +174,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     "08:30", "09:30", "10:30", "11:30", "13:30", 
     "14:30", "15:30", "16:30", "17:55", "18:55", "19:55",
   ];
+    List<String> visibleTimeSlots = [];
 
   final Map<String, String> timeRangeMap = {
     "06:30": "08:30", 
@@ -500,7 +608,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           final part1 = rendererContext.cell.value?.toString() ?? '';
           final part2 = rendererContext.row.cells['part_2']?.value?.toString() ?? '';
           final targetPerJam = hourlyTargets.isNotEmpty ? (hourlyTargets.values.first * 2) : 0;
-          
           // Saat edit: tampilkan gabungan part1,part2 di semua baris
           if (rendererContext.stateManager.isEditing && rendererContext.stateManager.currentCell == rendererContext.cell) {
             String part1 = rendererContext.cell.value?.toString() ?? '';
@@ -562,7 +669,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               ),
             );
           }
-          
           // Tampilan normal dengan warna berdasarkan target
           if (part2.isNotEmpty) {
             final part1Value = int.tryParse(part1) ?? 0;
@@ -574,9 +680,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             final color2 = part2.isEmpty || part2Value == 0 
                 ? Colors.blue.shade50 
                 : (part2Value >= targetPerJam ? Colors.green.shade200 : Colors.red.shade200);
-            
             return Container(
               height: 30,
+              decoration: BoxDecoration(
+                border: Border(
+                  right: BorderSide(color: Colors.blue.shade800, width: 1), // border kanan untuk part
+                ),
+              ),
               child: Row(
                 children: [
                   Expanded(
@@ -609,12 +719,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             final color1 = part1.isEmpty || part1Value == 0 
                 ? Colors.blue.shade50 
                 : (part1Value >= targetPerJam ? Colors.green.shade200 : Colors.red.shade200);
-            
             return Container(
               height: 30,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: color1,
+                border: Border(
+                  right: BorderSide(color: Colors.blue.shade800, width: 1), // border kanan untuk part
+                ),
               ),
               child: Text(part1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
             );
@@ -667,7 +779,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       ),
     ];
 
-    for (final time in timeSlots) {
+  for (final time in visibleTimeSlots) {
       for (int i = 1; i <= 5; i++) {
         kumitateColumns.add(PlutoColumn(
           title: "$i",
@@ -1042,10 +1154,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         for (final time in timeSlots) {
           int timeSlotTotal = 0;
 
-          for (int i = 1; i <= 5; i++) {
-            final count = (entry["${time}_$i"] as num?)?.toInt() ?? 0;
+          for (int i2 = 1; i2 <= 5; i2++) {
+            final count = (entry["${time}_$i2"] as num?)?.toInt() ?? 0;
             timeSlotTotal += count;
-            cells["${time}_$i"] = PlutoCell(value: count);
+            cells["${time}_$i2"] = PlutoCell(value: count);
           }
 
           // PART CALCULATION (readonly, sesuai rumus, hanya jika part di stock pagi ada)
@@ -1110,7 +1222,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             cells["${time}_stock"] = PlutoCell(value: 0);
           } else {
             // For other rows: stock = stock_pagi_stock + previous process cumulative - current process cumulative
-            final previousProcess = kumitateData[i-1];
+            final previousProcess = filteredKumitateData[i-1];
             final previousCumulative = previousProcess["${time}_cumulative"] ?? 0;
             final currentCumulative = entry["${time}_cumulative"] ?? 0;
             // stock_pagi_stock = stock_pagi_1 + ... + stock_pagi_5
@@ -1130,7 +1242,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   void _buildPartColumnsAndRows() {
     double cumulativeTarget = 0.0;
     partColumnGroups = [
-      for (final time in timeSlots)
+      for (final time in visibleTimeSlots)
         (() {
           cumulativeTarget += (hourlyTargets[time] ?? 0.0);
           return PlutoColumnGroup(
@@ -1198,7 +1310,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         },
       ),
       
-      for (final time in timeSlots)
+      for (final time in visibleTimeSlots)
         PlutoColumn(
           title: time,
           field: "${time}_cumulative",
@@ -1216,7 +1328,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           renderer: (rendererContext) {
             final cumulative = rendererContext.cell.value as int;
             double cumulativeTarget = 0.0;
-            for (var slot in timeSlots) {
+            for (var slot in visibleTimeSlots) {
               cumulativeTarget += (hourlyTargets[slot] ?? 0.0);
               if (slot == time) break;
             }
@@ -1324,7 +1436,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           ),
         };
 
-        for (final time in timeSlots) {
+      for (final time in visibleTimeSlots) {
           for (int i = 1; i <= 2; i++) {
             entry["${time}_$i"] = (entry["${time}_$i"] as num?)?.toInt() ?? 0;
           }
@@ -1357,6 +1469,20 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     kumitateData = await fetchCounterData(formattedDate, selectedLine, 'Kumitate');
     partData = await fetchCounterData(formattedDate, selectedLine, 'Part');
 
+      // Tentukan visibleTimeSlots: hanya timeslot yang ada data di salah satu proses
+      Set<String> slots = {};
+      for (final data in [...kumitateData, ...partData]) {
+        for (final slot in timeSlots) {
+          for (int i = 1; i <= 5; i++) {
+            if ((data["${slot}_$i"] ?? 0) != 0) {
+              slots.add(slot);
+            }
+          }
+        }
+      }
+      visibleTimeSlots = timeSlots.where((t) => slots.contains(t)).toList();
+
+
     if (kumitateData.isEmpty && partData.isEmpty) {
       setState(() {
         noDataAvailable = true;
@@ -1364,6 +1490,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     } else {
       _buildKumitateColumnsAndRows();
       _buildPartColumnsAndRows();
+      _buildProsesTable();
     }
 
     setState(() => isLoading = false);
@@ -1960,6 +2087,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                           rows: partRows,
                           columnGroups: partColumnGroups,
                         ),
+                      if (prosesRows.isNotEmpty)
+                        _buildTableWidget(
+                          title: 'AKUMULATIF LINE',
+                          columns: prosesColumns,
+                          rows: prosesRows,
+                          columnGroups: prosesColumnGroups,
+                        ),
                     ],
                   ),
                 ),
@@ -2024,8 +2158,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                     columnHeight: columnHeaderHeight,
                   ),
                   scrollbar: PlutoGridScrollbarConfig(
-                    isAlwaysShown: false,
-                    scrollbarThickness: 0,
+                    isAlwaysShown: true,
+                    scrollbarThickness: 5,
                   ),
                   enableMoveHorizontalInEditing: true,
                   enterKeyAction: PlutoGridEnterKeyAction.editingAndMoveDown,
