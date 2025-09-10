@@ -2105,20 +2105,24 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                           ],
                         ),
                       ),
-                      if (kumitateRows.isNotEmpty)
+                      if (kumitateRows.isNotEmpty) ...[
                         _buildTableWidget(
                           title: 'KUMITATE',
                           columns: kumitateColumns,
                           rows: kumitateRows,
                           columnGroups: kumitateColumnGroups,
                         ),
-                      if (partRows.isNotEmpty)
+                        SizedBox(height: 30),
+                      ],
+                      if (partRows.isNotEmpty) ...[
                         _buildTableWidget(
                           title: 'PART',
                           columns: partColumns,
                           rows: partRows,
                           columnGroups: partColumnGroups,
                         ),
+                        SizedBox(height: 30),
+                      ],
                       if (processNames.isNotEmpty)
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,

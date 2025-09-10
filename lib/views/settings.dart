@@ -385,10 +385,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                                     ),
                                     Row(
                                       children: [
-                                        IconButton(
-                                          icon: Icon(Icons.add, size: 18, color: Colors.green),
-                                          onPressed: () => addProcess(line),
-                                        ),
+                                        // IconButton untuk tambah proses dihilangkan
                                         IconButton(
                                           icon: Icon(Icons.save, size: 18, color: Colors.blue),
                                           onPressed: () => saveChangesPerLine(line),
@@ -444,10 +441,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                                               ),
                                             ),
                                             SizedBox(width: 6),
-                                            IconButton(
-                                              icon: Icon(Icons.delete, size: 18, color: Colors.red),
-                                              onPressed: () => deleteProcess(line, index),
-                                            ),
+                                            // IconButton untuk hapus proses dihilangkan
                                           ],
                                         ),
                                       );
