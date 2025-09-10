@@ -16,16 +16,18 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   // Untuk tabel Proses (akumulatif 12345 per timeslot)
   List<PlutoColumn> prosesColumns = [];
   List<PlutoRow> prosesRows = [];
+  String? selectedProcessName;
+  List<String> processNames = [];
 
   // Build tabel Proses: timeslot, 1,2,3,4,5, total akumulatif per timeslot
   void _buildProsesTable() {
-    // Kolom: proses, lalu untuk setiap timeslot ada subkolom 1-5
+    // Kolom: TIME, lalu per line (1-5) grup: Jam, Ak
     prosesColumns = [
       PlutoColumn(
-        title: "PROCESS",
-        field: "process_name",
+        title: "TIME",
+        field: "time_slot",
         type: PlutoColumnType.text(),
-        width: 260, // sama seperti kumitate
+        width: 100,
         titleTextAlign: PlutoColumnTextAlign.center,
         backgroundColor: Colors.blue.shade300,
         enableColumnDrag: false,
@@ -35,86 +37,116 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         enableDropToResize: false,
         renderer: (ctx) {
           return Container(
-            alignment: Alignment.centerLeft,
-            padding: EdgeInsets.symmetric(horizontal: 8),
+            alignment: Alignment.center,
             child: Text(
               ctx.cell.value.toString(),
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14), // disamakan dengan kumitate/part
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
             ),
           );
         },
       ),
-    ];
-    // Untuk group kolom timeslot
-    List<PlutoColumnGroup> prosesColumnGroups = [];
-  double cumulativeTarget = 0.0;
-  for (final time in visibleTimeSlots) {
-      // Tambah subkolom 1-5 untuk setiap timeslot
-      for (int i = 1; i <= 5; i++) {
-        prosesColumns.add(
-          PlutoColumn(
-            title: "$i",
-            field: "${time}_$i",
-            type: PlutoColumnType.number(),
-            width: 50, // sama seperti kumitate
-            titleTextAlign: PlutoColumnTextAlign.center,
-            textAlign: PlutoColumnTextAlign.center,
-            backgroundColor: Colors.blue.shade200,
-            enableColumnDrag: false,
-            enableContextMenu: false,
-            enableSorting: false,
-            enableEditingMode: false,
-            enableDropToResize: false, // tidak bisa resize
-            renderer: (ctx) {
-              return Container(
-                alignment: Alignment.center,
-                child: Text(
-                  ctx.cell.value.toString(),
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold), // sama seperti kumitate
-                ),
-              );
-            },
-          ),
-        );
-      }
-      // Group kolom timeslot (dengan target)
-      cumulativeTarget += (hourlyTargets[time] ?? 0.0);
-      // Format header: jam di tengah, spasi, lalu Target akumulatif sejajar kanan (mirip kumitate)
-      String groupTitle = ''.padLeft(25) + time + ''.padRight(15) + ':${cumulativeTarget.round()}';
-      prosesColumnGroups.add(
-        PlutoColumnGroup(
-          title: groupTitle,
-          backgroundColor: Colors.blue.shade300,
-          fields: [for (int i = 1; i <= 5; i++) "${time}_$i"],
+      for (int i = 1; i <= 5; i++) ...[
+        PlutoColumn(
+          title: "Jam",
+          field: "line_${i}_jam",
+          type: PlutoColumnType.number(),
+          width: 60,
+          titleTextAlign: PlutoColumnTextAlign.center,
+          textAlign: PlutoColumnTextAlign.center,
+          backgroundColor: Colors.blue.shade200,
+          enableColumnDrag: false,
+          enableContextMenu: false,
+          enableSorting: false,
+          enableEditingMode: false,
+          enableDropToResize: false,
+          renderer: (ctx) {
+            return Container(
+              alignment: Alignment.center,
+              child: Text(
+                ctx.cell.value.toString(),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            );
+          },
         ),
-      );
-    }
+        PlutoColumn(
+          title: "Ak",
+          field: "line_${i}_ak",
+          type: PlutoColumnType.number(),
+          width: 60,
+          titleTextAlign: PlutoColumnTextAlign.center,
+          textAlign: PlutoColumnTextAlign.center,
+          backgroundColor: Colors.blue.shade200, // Sama dengan kolom Jam
+          enableColumnDrag: false,
+          enableContextMenu: false,
+          enableSorting: false,
+          enableEditingMode: false,
+          enableDropToResize: false,
+          renderer: (ctx) {
+            return Container(
+              alignment: Alignment.center,
+              child: Text(
+                ctx.cell.value.toString(),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            );
+          },
+        ),
+      ],
+    ];
 
-    // Baris: proses dari kumitate, urut sequence
+    // Group kolom per line
+    prosesColumnGroups = [
+      for (int i = 1; i <= 5; i++)
+        PlutoColumnGroup(
+          title: '$i',
+          backgroundColor: Colors.blue.shade300,
+          fields: ['line_${i}_jam', 'line_${i}_ak'],
+        ),
+    ];
+
+    // Baris: setiap timeslot, data dari proses terpilih
     prosesRows = [];
     final prosesList = List<Map<String, dynamic>>.from(kumitateData);
     prosesList.sort((a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
-    for (final proses in prosesList) {
-      final cells = <String, PlutoCell>{
-        "process_name": PlutoCell(value: proses["process_name"] ?? ""),
-      };
-  for (final time in visibleTimeSlots) {
-        for (int i = 1; i <= 5; i++) {
-          // int value = (proses["${time}_$i"] as int? ?? 0); // Removed unused variable
-          // Akumulatif: jumlahkan dari jam pertama sampai jam ini
-          int akumulatif = 0;
-          for (final t in visibleTimeSlots) {
-            if (t.compareTo(time) > 0) break;
-            akumulatif += (proses["${t}_$i"] as int? ?? 0);
-            if (t == time) break;
-          }
-          cells["${time}_$i"] = PlutoCell(value: akumulatif);
+    // Ambil hanya proses dengan sequence != 0 (sesuai tabel kumitate)
+    processNames = prosesList
+      .where((e) => (e['sequence'] ?? 0) != 0)
+      .map((e) => e["process_name"]?.toString() ?? "")
+      .where((e) => e.isNotEmpty)
+      .toList();
+    // Pastikan selectedProcessName selalu valid
+    if (selectedProcessName == null || !processNames.contains(selectedProcessName)) {
+      selectedProcessName = processNames.isNotEmpty ? processNames.first : null;
+    }
+    final proses = prosesList.firstWhere(
+      (e) => e["process_name"]?.toString() == selectedProcessName,
+      orElse: () => {},
+    );
+    for (final time in visibleTimeSlots) {
+      final cells = <String, PlutoCell>{};
+      cells["time_slot"] = PlutoCell(value: time);
+      for (int i = 1; i <= 5; i++) {
+        // Jam: hanya perolehan di jam itu saja
+        final jamRaw = proses["${time}_$i"];
+        final jamValue = jamRaw == null ? ' ' : (jamRaw is int ? (jamRaw == 0 ? ' ' : jamRaw) : jamRaw.toString() == '0' ? ' ' : jamRaw);
+        // Ak: akumulatif sampai jam itu
+        int akumulatif = 0;
+        bool hasData = false;
+        for (final t in visibleTimeSlots) {
+          final val = proses["${t}_$i"];
+          if (val != null && val != 0 && val.toString() != '0') hasData = true;
+          if (t.compareTo(time) > 0) break;
+          akumulatif += (val is int ? val : int.tryParse(val?.toString() ?? '0') ?? 0);
+          if (t == time) break;
         }
+        cells["line_${i}_jam"] = PlutoCell(value: jamValue);
+        // Akumulatif: jika tidak ada data sama sekali, tampilkan ' '
+        cells["line_${i}_ak"] = PlutoCell(value: hasData ? akumulatif : ' ');
       }
       prosesRows.add(PlutoRow(cells: cells));
     }
 
-    // Simpan group kolom untuk digunakan di widget
     this.prosesColumns = prosesColumns;
     this.prosesRows = prosesRows;
     this.prosesColumnGroups = prosesColumnGroups;
@@ -2087,12 +2119,32 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                           rows: partRows,
                           columnGroups: partColumnGroups,
                         ),
-                      if (prosesRows.isNotEmpty)
-                        _buildTableWidget(
-                          title: 'AKUMULATIF LINE',
-                          columns: prosesColumns,
-                          rows: prosesRows,
-                          columnGroups: prosesColumnGroups,
+                      if (processNames.isNotEmpty)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildTableWidget(
+                              title: 'AKUMULATIF LINE',
+                              columns: prosesColumns,
+                              rows: prosesRows,
+                              columnGroups: prosesColumnGroups,
+                              processDropdown: DropdownButton<String>(
+                                value: selectedProcessName,
+                                items: processNames.map((name) => DropdownMenuItem(
+                                  value: name,
+                                  child: Text(name),
+                                )).toList(),
+                                onChanged: (value) {
+                                  if (value != null && value != selectedProcessName) {
+                                    setState(() {
+                                      selectedProcessName = value;
+                                      _buildProsesTable();
+                                    });
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                     ],
                   ),
@@ -2105,14 +2157,17 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     required List<PlutoColumn> columns,
     required List<PlutoRow> rows,
     required List<PlutoColumnGroup> columnGroups,
+    Widget? processDropdown,
   }) {
-    const rowHeight = 30.0;
-    const headerHeight = 40.0;
-    const columnHeaderHeight = 30.0;
-    final totalHeight = headerHeight + columnHeaderHeight + (rows.length * rowHeight) + 5;
+  const rowHeight = 30.0;
+  const headerHeight = 40.0;
+  const columnHeaderHeight = 30.0;
+  // Hitung tinggi tabel dinamis sesuai jumlah baris
+  // Tinggi tabel otomatis sesuai jumlah baris
+  final totalHeight = headerHeight + columnHeaderHeight + (rows.length * rowHeight) + 6;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      padding: const EdgeInsets.symmetric(horizontal: 8.0), // hilangkan padding vertikal
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -2133,19 +2188,47 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               ),
             ),
           ),
+          if (processDropdown != null)
+            Container(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                children: [
+                  Text('Pilih Proses: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: Colors.blue.shade500, width: 1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        canvasColor: Colors.white,
+                      ),
+                      child: processDropdown,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           GestureDetector(
             onTap: () {
               FocusScope.of(context).unfocus();
               setState(() {});
             },
             child: Container(
-              height: totalHeight,
+              constraints: BoxConstraints(
+                minHeight: totalHeight,
+                maxHeight: totalHeight,
+              ),
               decoration: BoxDecoration(
                 border: Border.all(color: Colors.blue.shade800),
                 borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
               ),
               child: PlutoGrid(
-                key: ValueKey('${title}_${selectedDate}_${selectedLine}'),
+                key: ValueKey('${title}_${selectedDate}_${selectedLine}_${title == 'AKUMULATIF LINE' ? (selectedProcessName ?? '') : ''}'),
                 columns: columns,
                 rows: rows,
                 columnGroups: columnGroups,

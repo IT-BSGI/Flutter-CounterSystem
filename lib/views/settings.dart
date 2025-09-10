@@ -36,90 +36,96 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   }
 
   Future<void> fetchProcessLines() async {
-  try {
-    setState(() => _isLoading = true);
-    
-    DocumentSnapshot processSnapshot = 
-        await _firestore.collection('basic_data').doc('data_process').get();
-
-    if (!processSnapshot.exists) {
-      print('Document data_process not found');
-      setState(() => _isLoading = false);
-      return;
-    }
-
-    Map<String, dynamic> processData = processSnapshot.data() as Map<String, dynamic>;
-    String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-
-    for (String line in lines) {
-      String lineKey = "process_line_$line";
+    try {
+      setState(() => _isLoading = true);
       
-      if (!processData.containsKey(lineKey) || processData[lineKey] == null) {
-        print('Key $lineKey not found or null in document');
-        continue;
+      DocumentSnapshot processSnapshot = 
+          await _firestore.collection('basic_data').doc('data_process').get();
+
+      if (!processSnapshot.exists) {
+        print('Document data_process not found');
+        setState(() => _isLoading = false);
+        return;
       }
 
-      List<String> processes = List<String>.from(processData[lineKey] ?? []);
-      
-      _processControllers[line] = 
-          processes.map((p) => TextEditingController(text: p)).toList();
-      _sequenceControllers[line] = 
-          processes.map((_) => TextEditingController(text: "0")).toList();
+      Map<String, dynamic> processData = processSnapshot.data() as Map<String, dynamic>;
+      String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
 
-      // Fetch sequence for each process
-      CollectionReference sequenceRef = _firestore
-          .collection('counter_sistem')
-          .doc(formattedDate)
-          .collection(line)
-          .doc('Kumitate')
-          .collection('Process');
-
-      for (int i = 0; i < processes.length; i++) {
-        String processName = processes[i];
+      for (String line in lines) {
+        String lineKey = "process_line_$line";
         
-        // Skip if process name is empty
-        if (processName.isEmpty) {
-          print('Empty process name at index $i in line $line');
+        if (!processData.containsKey(lineKey) || processData[lineKey] == null) {
+          print('Key $lineKey not found or null in document');
           continue;
         }
 
-        try {
-          DocumentSnapshot seqDoc = await sequenceRef.doc(processName).get();
+        List<String> processes = List<String>.from(processData[lineKey] ?? []);
+        
+        _processControllers[line] = 
+            processes.map((p) => TextEditingController(text: p)).toList();
+        _sequenceControllers[line] = 
+            processes.map((_) => TextEditingController(text: "0")).toList();
+
+        // Fetch sequence for each process
+        CollectionReference sequenceRef = _firestore
+            .collection('counter_sistem')
+            .doc(formattedDate)
+            .collection(line)
+            .doc('Kumitate')
+            .collection('Process');
+
+        for (int i = 0; i < processes.length; i++) {
+          String processName = processes[i];
           
-          if (seqDoc.exists && seqDoc.data() != null) {
-            dynamic seqValue = (seqDoc.data() as Map<String, dynamic>)['sequence'];
-            if (seqValue != null) {
-              _sequenceControllers[line]![i].text = seqValue.toString();
-            }
+          // Skip if process name is empty
+          if (processName.isEmpty) {
+            print('Empty process name at index $i in line $line');
+            continue;
           }
-        } catch (e) {
-          print('Error fetching sequence for $processName: $e');
+
+          try {
+            DocumentSnapshot seqDoc = await sequenceRef.doc(processName).get();
+            
+            if (seqDoc.exists && seqDoc.data() != null) {
+              dynamic seqValue = (seqDoc.data() as Map<String, dynamic>)['sequence'];
+              if (seqValue != null) {
+                _sequenceControllers[line]![i].text = seqValue.toString();
+              }
+            }
+          } catch (e) {
+            print('Error fetching sequence for $processName: $e');
+          }
         }
+
+        _sortProcessesBySequence(line);
       }
 
-      _sortProcessesBySequence(line);
+      setState(() => _isLoading = false);
+    } catch (e) {
+      print("Error fetching data: $e");
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal memuat data: ${e.toString()}')),
+      );
     }
-
-    setState(() => _isLoading = false);
-  } catch (e) {
-    print("Error fetching data: $e");
-    setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Gagal memuat data: ${e.toString()}')),
-    );
   }
-}
 
   void _sortProcessesBySequence(String line) {
     List<Map<String, dynamic>> tempList = [];
     for (int i = 0; i < _processControllers[line]!.length; i++) {
+      int sequence = int.tryParse(_sequenceControllers[line]![i].text) ?? 0;
+      
+      // Untuk sorting, kita anggap 0 sebagai angka terbesar
+      int sortValue = sequence == 0 ? 999999 : sequence;
+      
       tempList.add({
         'process': _processControllers[line]![i].text,
-        'sequence': int.tryParse(_sequenceControllers[line]![i].text) ?? 0,
+        'sequence': sequence,
+        'sortValue': sortValue,
       });
     }
 
-    tempList.sort((a, b) => a['sequence'].compareTo(b['sequence']));
+    tempList.sort((a, b) => a['sortValue'].compareTo(b['sortValue']));
 
     for (int i = 0; i < tempList.length; i++) {
       _processControllers[line]![i].text = tempList[i]['process'];
@@ -128,85 +134,92 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   }
 
   Future<void> saveChangesPerLine(String line) async {
-  try {
-    // Prepare data for saving
-    List<Map<String, dynamic>> processData = [];
-    for (int i = 0; i < _processControllers[line]!.length; i++) {
-      String processName = _processControllers[line]![i].text.trim();
-      int sequence = int.tryParse(_sequenceControllers[line]![i].text.trim()) ?? 0;
+    try {
+      // Prepare data for saving
+      List<Map<String, dynamic>> processData = [];
+      for (int i = 0; i < _processControllers[line]!.length; i++) {
+        String processName = _processControllers[line]![i].text.trim();
+        int sequence = int.tryParse(_sequenceControllers[line]![i].text.trim()) ?? 0;
+        
+        if (processName.isNotEmpty) {
+          processData.add({
+            'process': processName,
+            'sequence': sequence,
+          });
+        }
+      }
+
+      // Sort by sequence (dengan 0 dianggap sebagai angka terbesar)
+      processData.sort((a, b) {
+        int aValue = a['sequence'] == 0 ? 999999 : a['sequence'];
+        int bValue = b['sequence'] == 0 ? 999999 : b['sequence'];
+        return aValue.compareTo(bValue);
+      });
+
+      // 1. Save process names to basic_data
+      await _firestore.collection('basic_data').doc('data_process').update({
+        "process_line_$line": processData.map((e) => e['process']).toList(),
+      });
+
+      // 2. Save sequences to counter_sistem with merge option - HANYA untuk sequence yang bukan 0
+      String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
+      WriteBatch batch = _firestore.batch();
       
-      if (processName.isNotEmpty) {
-        processData.add({
-          'process': processName,
-          'sequence': sequence,
-        });
-      }
-    }
-
-    // Sort by sequence
-    processData.sort((a, b) => a['sequence'].compareTo(b['sequence']));
-
-    // 1. Save process names to basic_data
-    await _firestore.collection('basic_data').doc('data_process').update({
-      "process_line_$line": processData.map((e) => e['process']).toList(),
-    });
-
-    // 2. Save sequences to counter_sistem with merge option
-    String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-    WriteBatch batch = _firestore.batch();
-    
-    // First get all existing processes to clean up removed ones
-    QuerySnapshot existingProcesses = await _firestore
-        .collection('counter_sistem')
-        .doc(formattedDate)
-        .collection(line)
-        .doc('Kumitate')
-        .collection('Process')
-        .get();
-
-    // Create set of current process names
-    Set<String> currentProcesses = processData.map((e) => e['process'] as String).toSet();
-
-    // Delete processes that were removed
-    for (DocumentSnapshot doc in existingProcesses.docs) {
-      if (!currentProcesses.contains(doc.id)) {
-        batch.delete(doc.reference);
-      }
-    }
-
-    // Update or add new processes
-    for (var item in processData) {
-      DocumentReference processRef = _firestore
+      // First get all existing processes to clean up removed ones
+      QuerySnapshot existingProcesses = await _firestore
           .collection('counter_sistem')
           .doc(formattedDate)
           .collection(line)
           .doc('Kumitate')
           .collection('Process')
-          .doc(item['process']);
+          .get();
 
-      batch.set(processRef, {'sequence': item['sequence']}, SetOptions(merge: true));
-    }
+      // Create set of current process names
+      Set<String> currentProcesses = processData.map((e) => e['process'] as String).toSet();
 
-    await batch.commit();
-
-    // Update UI with sorted data
-    setState(() {
-      for (int i = 0; i < processData.length; i++) {
-        _processControllers[line]![i].text = processData[i]['process'];
-        _sequenceControllers[line]![i].text = processData[i]['sequence'].toString();
+      // Delete processes that were removed
+      for (DocumentSnapshot doc in existingProcesses.docs) {
+        if (!currentProcesses.contains(doc.id)) {
+          batch.delete(doc.reference);
+        }
       }
-    });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("${lineTitles[line]} berhasil disimpan!")),
-    );
-  } catch (e) {
-    print("Error saving data: $e");
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Gagal menyimpan ${lineTitles[line]}: $e")),
-    );
+      // Update or add new processes - HANYA untuk sequence yang bukan 0
+      for (var item in processData) {
+        // Jangan simpan sequence 0 ke Firebase
+        if (item['sequence'] == 0) continue;
+        
+        DocumentReference processRef = _firestore
+            .collection('counter_sistem')
+            .doc(formattedDate)
+            .collection(line)
+            .doc('Kumitate')
+            .collection('Process')
+            .doc(item['process']);
+
+        batch.set(processRef, {'sequence': item['sequence']}, SetOptions(merge: true));
+      }
+
+      await batch.commit();
+
+      // Update UI with sorted data
+      setState(() {
+        for (int i = 0; i < processData.length; i++) {
+          _processControllers[line]![i].text = processData[i]['process'];
+          _sequenceControllers[line]![i].text = processData[i]['sequence'].toString();
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("${lineTitles[line]} berhasil disimpan!")),
+      );
+    } catch (e) {
+      print("Error saving data: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Gagal menyimpan ${lineTitles[line]}: $e")),
+      );
+    }
   }
-}
 
   void addProcess(String line) {
     setState(() {
@@ -396,8 +409,9 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                                           children: [
                                             Expanded(
                                               flex: 3,
-                                              child: TextField(
+                                              child: TextFormField(
                                                 controller: _processControllers[line]![index],
+                                                enabled: false, // Tidak bisa di edit
                                                 decoration: InputDecoration(
                                                   labelText: "Process ${index + 1}",
                                                   border: OutlineInputBorder(
@@ -405,6 +419,11 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                                                   ),
                                                   contentPadding: EdgeInsets.symmetric(
                                                       horizontal: 8, vertical: 6),
+                                                  filled: true,
+                                                  fillColor: Colors.grey[200],
+                                                ),
+                                                style: TextStyle(
+                                                  color: Colors.grey[700],
                                                 ),
                                               ),
                                             ),
