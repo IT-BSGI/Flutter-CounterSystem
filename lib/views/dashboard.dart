@@ -5,6 +5,7 @@ import 'home.dart';
 import 'counter_table_screen.dart';
 import 'settings.dart';
 import 'target.dart';
+import 'final_page.dart';
 
 class DashboardPanel extends StatefulWidget {
   @override
@@ -18,6 +19,7 @@ class _DashboardPanelState extends State<DashboardPanel> {
   final List<Widget> _pages = [
     HomePage(),
     CounterTableScreen(),
+    FinalPage(),
     EditProcessesScreen(),
     TargetPage(), // Added target page
   ];
@@ -62,6 +64,11 @@ class _DashboardPanelState extends State<DashboardPanel> {
                     icon: Icon(Icons.bar_chart_outlined),
                     selectedIcon: Icon(Icons.bar_chart),
                     label: Text('Data'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.check_circle_outline),
+                    selectedIcon: Icon(Icons.check_circle),
+                    label: Text('Final'),
                   ),
                   NavigationRailDestination(
                     icon: Icon(Icons.settings_outlined),
