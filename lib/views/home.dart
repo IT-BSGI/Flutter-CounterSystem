@@ -13,7 +13,7 @@ class _HomePageState extends State<HomePage> {
   DateTime selectedDate = DateTime.now();
   bool isLoading = true;
   Map<String, List<Map<String, dynamic>>> lineData = {};
-  Map<String, String> selectedProcesses = {};
+  Map<String, String?> selectedProcesses = {};
   late PageController _pageController;
   int _currentPage = 0;
   Timer? _slideshowTimer;
@@ -145,9 +145,9 @@ class _HomePageState extends State<HomePage> {
     
     setState(() => isLoading = true);
     
-    String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-    String currentLine = _pausedLine ?? lineData.keys.elementAt(_currentPage);
-    String currentProcess = selectedProcesses[currentLine] ?? '';
+  String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
+  String currentLine = _pausedLine ?? lineData.keys.elementAt(_currentPage);
+  String? currentProcessName = selectedProcesses[currentLine];
 
     try {
       var newData = await fetchLineData(currentLine, formattedDate);
@@ -156,8 +156,8 @@ class _HomePageState extends State<HomePage> {
       if (mounted && newData.isNotEmpty) {
         setState(() {
           lineData[currentLine] = newData;
-          bool processExists = newData.any((p) => p['process_name'] == currentProcess);
-          selectedProcesses[currentLine] = processExists ? currentProcess : newData.last['process_name'];
+          bool processExists = newData.any((p) => p['process_name'] == currentProcessName);
+          selectedProcesses[currentLine] = processExists ? currentProcessName : newData.last['process_name'];
           isLoading = false;
         });
         
@@ -288,67 +288,82 @@ class _HomePageState extends State<HomePage> {
 
   Future<List<Map<String, dynamic>>> fetchLineData(String line, String date) async {
     try {
-      final processRef = FirebaseFirestore.instance
+      // The database structure now stores dynamic contract collections under the
+      // 'Kumitate' document (field 'Kontrak' contains the list of collection names).
+      // Fallback to the legacy 'Process' collection when 'Kontrak' is missing.
+      final kumitateDocRef = FirebaseFirestore.instance
           .collection('counter_sistem')
           .doc(date)
           .collection(line)
-          .doc('Kumitate')
-          .collection('Process');
+          .doc('Kumitate');
 
-      final snapshot = await processRef.get();
-
-      if (snapshot.docs.isEmpty) {
-        print('No process documents found for Line $line on $date');
+      final kumitateDoc = await kumitateDocRef.get();
+      if (!kumitateDoc.exists) {
+        print('No Kumitate document found for Line $line on $date');
         return [];
       }
 
+      final data = kumitateDoc.data();
+      final kontrakArray = (data != null && data['Kontrak'] is List)
+          ? List<dynamic>.from(data['Kontrak'])
+          : <dynamic>[];
+
+      // If no kontrak list found, keep compatibility with older structure using 'Process'
+      final contractCollections = kontrakArray.isEmpty ? ['Process'] : kontrakArray.map((e) => e.toString()).toList();
+
       List<Map<String, dynamic>> processList = [];
 
-      for (var doc in snapshot.docs) {
-        final processData = doc.data();
-        final processMap = <String, dynamic>{
-          "process_name": doc.id.replaceAll('_', ' '),
-          "sequence": (processData['sequence'] as num?)?.toInt() ?? 0,
-          "raw_data": processData,
-        };
+      for (final contractName in contractCollections) {
+        final collectionRef = kumitateDocRef.collection(contractName);
+        final snapshot = await collectionRef.get();
 
-        // Initialize all time slots with 0
-        Map<String, int> cumulativeData = {};
-        for (final time in timeSlots) {
-          cumulativeData[time] = 0;
-        }
+        for (var doc in snapshot.docs) {
+          final processData = doc.data();
+          final processMap = <String, dynamic>{
+            "process_name": doc.id.replaceAll('_', ' '),
+            "sequence": (processData['sequence'] as num?)?.toInt() ?? 0,
+            "raw_data": processData,
+            // keep contract name and document id so entries are uniquely identifiable
+            "contract": contractName,
+            "id": doc.id,
+          };
 
-        // Process each time entry in the document
-        processData.forEach((key, value) {
-          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
-            final timeKey = key;
-            final mappedTime = timeRangeMap[timeKey];
-            
-            if (mappedTime != null) {
-              int slotTotal = 0;
-              for (int i = 1; i <= 5; i++) {
-                final dynamic countValue = value['$i'];
-                final int count = countValue is num 
-                    ? countValue.toInt() 
-                    : int.tryParse(countValue.toString()) ?? 0;
-                slotTotal += count;
-              }
-              cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
-            }
+          // Initialize all time slots with 0
+          Map<String, int> cumulativeData = {};
+          for (final time in timeSlots) {
+            cumulativeData[time] = 0;
           }
-        });
 
-        // Create final cumulative data
-        Map<String, int> finalCumulative = {};
-        int currentCumulative = 0;
-        
-        for (String time in timeSlots) {
-          currentCumulative += (cumulativeData[time] ?? 0);
-          finalCumulative[time] = currentCumulative;
+          // Process each time entry in the document
+          processData.forEach((key, value) {
+            if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
+              final mappedTime = timeRangeMap[key];
+              if (mappedTime != null) {
+                int slotTotal = 0;
+                // Kumitate on Home uses up to 5 lines per process
+                for (int i = 1; i <= 5; i++) {
+                  final dynamic countValue = value['$i'];
+                  final int count = countValue is num
+                      ? countValue.toInt()
+                      : int.tryParse(countValue.toString()) ?? 0;
+                  slotTotal += count;
+                }
+                cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
+              }
+            }
+          });
+
+          // Create final cumulative data
+          Map<String, int> finalCumulative = {};
+          int currentCumulative = 0;
+          for (String time in timeSlots) {
+            currentCumulative += (cumulativeData[time] ?? 0);
+            finalCumulative[time] = currentCumulative;
+          }
+
+          processMap['cumulative'] = finalCumulative;
+          processList.add(processMap);
         }
-
-        processMap['cumulative'] = finalCumulative;
-        processList.add(processMap);
       }
 
       // Sort by sequence number
@@ -361,93 +376,57 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _setupStreamListeners(String date) {
+    // Cancel previous subscriptions
     _streamSubscriptions.forEach((_, subscription) => subscription.cancel());
     _streamSubscriptions.clear();
 
     for (String line in ['A', 'B', 'C', 'D', 'E']) {
-      final stream = FirebaseFirestore.instance
+      final kumitateDocRef = FirebaseFirestore.instance
           .collection('counter_sistem')
           .doc(date)
           .collection(line)
-          .doc('Kumitate')
-          .collection('Process')
-          .snapshots();
+          .doc('Kumitate');
 
-      _streamSubscriptions[line] = stream.listen((snapshot) async {
-        if (snapshot.docs.isNotEmpty && mounted) {
-          String currentLine = _pausedLine ?? lineData.keys.elementAt(_currentPage);
-          
-          if (line == currentLine || _isSlideshowRunning) {
-            var newData = await _processSnapshot(snapshot);
-            
-            if (mounted && newData.isNotEmpty) {
-              setState(() {
-                lineData[line] = newData;
-              });
+      // Read contract list (Kontrak) to know which subcollections to listen to.
+      kumitateDocRef.get().then((docSnap) {
+        if (!docSnap.exists) return;
+        final data = docSnap.data();
+        final kontrakArray = (data != null && data['Kontrak'] is List)
+            ? List<dynamic>.from(data['Kontrak'])
+            : <dynamic>[];
+        final contractCollections = kontrakArray.isEmpty ? ['Process'] : kontrakArray.map((e) => e.toString()).toList();
+
+        for (final contractName in contractCollections) {
+          final stream = kumitateDocRef.collection(contractName).snapshots();
+          final key = '$line|$contractName';
+          _streamSubscriptions[key] = stream.listen((_) async {
+            // On any change in any contract collection, refetch the whole line data
+            try {
+              final newData = await fetchLineData(line, date);
+              if (mounted && newData.isNotEmpty) {
+                setState(() {
+                  lineData[line] = newData;
+                });
+              }
+            } catch (e) {
+              print('Error updating data from stream for $line/$contractName: $e');
             }
-          }
+          });
         }
+      }).catchError((e) {
+        print('Error reading Kontrak for line $line on $date: $e');
       });
     }
   }
 
-  Future<List<Map<String, dynamic>>> _processSnapshot(QuerySnapshot snapshot) async {
-    List<Map<String, dynamic>> processList = [];
-
-    for (var doc in snapshot.docs) {
-      final processData = doc.data() as Map<String, dynamic>;
-      final processMap = <String, dynamic>{
-        "process_name": doc.id.replaceAll('_', ' '),
-        "sequence": (processData['sequence'] as num?)?.toInt() ?? 0,
-        "raw_data": processData,
-      };
-
-      // Initialize all time slots with 0
-      Map<String, int> cumulativeData = {};
-      for (final time in timeSlots) {
-        cumulativeData[time] = 0;
-      }
-
-      // Process each time entry in the document
-      processData.forEach((key, value) {
-        if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
-          final timeKey = key;
-          final mappedTime = timeRangeMap[timeKey];
-          
-          if (mappedTime != null) {
-            int slotTotal = 0;
-            for (int i = 1; i <= 5; i++) {
-              slotTotal += ((value['$i'] ?? 0) as num).toInt();
-            }
-            cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
-          }
-        }
-      });
-
-      // Create final cumulative data
-      Map<String, int> finalCumulative = {};
-      int currentCumulative = 0;
-      
-      for (String time in timeSlots) {
-        currentCumulative += (cumulativeData[time] ?? 0);
-        finalCumulative[time] = currentCumulative;
-      }
-
-      processMap['cumulative'] = finalCumulative;
-      processList.add(processMap);
-    }
-
-    // Sort by sequence number
-    processList.sort((a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
-    return processList;
-  }
+  // ...existing code...
 
   Future<void> loadData() async {
     setState(() => isLoading = true);
     
     String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-    Map<String, List<Map<String, dynamic>>> newData = {};
-    Map<String, String> newSelectedProcesses = {};
+  Map<String, List<Map<String, dynamic>>> newData = {};
+  Map<String, String?> newSelectedProcesses = {};
 
     final currentLineBeforeRefresh = _pausedLine ?? (_currentPage < lineData.length ? lineData.keys.elementAt(_currentPage) : null);
     final currentPageBeforeRefresh = _currentPage;
@@ -457,13 +436,15 @@ class _HomePageState extends State<HomePage> {
       await _fetchTarget(line, formattedDate);
       if (data.isNotEmpty) {
         newData[line] = data;
+        final last = data.last;
+        final lastName = last['process_name'];
         if (!selectedProcesses.containsKey(line)) {
-          newSelectedProcesses[line] = data.last['process_name'];
+          newSelectedProcesses[line] = lastName;
         } else {
           bool processExists = data.any((p) => p['process_name'] == selectedProcesses[line]);
-          newSelectedProcesses[line] = processExists 
-              ? selectedProcesses[line]! 
-              : data.last['process_name'];
+          newSelectedProcesses[line] = processExists
+              ? selectedProcesses[line]
+              : lastName;
         }
       } else {
         print("No data or invalid format for Line $line");
@@ -504,9 +485,26 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildHeader(String line, List<Map<String, dynamic>> processes) {
-    String currentProcess = selectedProcesses[line] ?? '';
+    String? currentProcess = selectedProcesses[line];
     double? target = _targets[line];
     double targetPerHour = target != null ? target / 8 : 0.0;
+
+    // Build deduplicated list of process names (labels). Selecting a name
+    // will aggregate data across all contracts that have the same name.
+    final seen = <String>{};
+    final names = <String>[];
+    for (var p in processes) {
+      final name = (p['process_name'] ?? '').toString();
+      if (name.isEmpty) continue;
+      if (!seen.contains(name)) {
+        seen.add(name);
+        names.add(name);
+      }
+    }
+
+    final displayValue = (currentProcess != null && names.contains(currentProcess))
+        ? currentProcess
+        : (names.isNotEmpty ? names.last : null);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -524,12 +522,12 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               DropdownButton<String>(
-                value: currentProcess,
-                items: processes.map((process) {
+                value: displayValue,
+                items: names.map((name) {
                   return DropdownMenuItem<String>(
-                    value: process['process_name'],
+                    value: name,
                     child: Text(
-                      process['process_name'],
+                      name,
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -612,15 +610,47 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget buildLineChart(String line, List<Map<String, dynamic>> processes) {
-    String currentProcess = selectedProcesses[line] ?? '';
-    var processData = processes.firstWhere(
-      (p) => p['process_name'] == currentProcess,
-      orElse: () => processes.first,
-    );
-    
-    Map<String, int> data = processData['cumulative'];
+    String? currentProcessName = selectedProcesses[line];
+
+    // Aggregate data for the selected process name across all contracts
+    // slotTotals holds total (non-cumulative) per time slot
+    final Map<String, int> slotTotals = { for (var t in timeSlots) t: 0 };
+    // rawDataAggregated maps originalTimeKey -> aggregated machine map { '1': sum, '2': sum, ... }
+    final Map<String, Map<String, int>> rawDataAggregated = {};
+
+    for (var p in processes) {
+      if (p['process_name'] != currentProcessName) continue;
+      final raw = p['raw_data'] as Map<String, dynamic>? ?? {};
+
+      raw.forEach((key, value) {
+        if (key == 'sequence' || key == 'belumKensa' || key == 'stock_20min' || key == 'stock_pagi' || key == 'part') return;
+        if (value is! Map<String, dynamic>) return;
+        final mapped = timeRangeMap[key];
+        if (mapped == null) return;
+
+        int slotSum = 0;
+        for (int i = 1; i <= 5; i++) {
+          final cnt = value['$i'];
+          final int c = cnt is num ? cnt.toInt() : int.tryParse(cnt.toString()) ?? 0;
+          slotSum += c;
+
+          rawDataAggregated.putIfAbsent(key, () => {});
+          rawDataAggregated[key]![ '$i' ] = (rawDataAggregated[key]![ '$i' ] ?? 0) + c;
+        }
+
+        slotTotals[mapped] = (slotTotals[mapped] ?? 0) + slotSum;
+      });
+    }
+
+    // Build cumulative data from slotTotals
+    Map<String, int> cumulative = {};
+    int running = 0;
+    for (var t in timeSlots) {
+      running += (slotTotals[t] ?? 0);
+      cumulative[t] = running;
+    }
+
     double? target = _targets[line];
-    Map<String, dynamic> rawData = processData['raw_data'];
 
     List<FlSpot> spots = [];
     List<FlSpot> targetSpots = [];
@@ -661,10 +691,10 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    // Add spots for each time slot
+    // Add spots for each time slot (use cumulative values)
     for (int i = 0; i < timeSlots.length; i++) {
       String time = timeSlots[i];
-      int value = data[time] ?? 0;
+      int value = cumulative[time] ?? 0;
       spots.add(FlSpot((i+1).toDouble(), value.toDouble()));
       
       if (value > maxY) maxY = value.toDouble();
@@ -700,49 +730,83 @@ class _HomePageState extends State<HomePage> {
                         lineTouchData: LineTouchData(
                           enabled: true,
                           touchTooltipData: LineTouchTooltipData(
+                            tooltipPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                            tooltipRoundedRadius: 6,
                             getTooltipItems: (List<LineBarSpot> touchedSpots) {
-                              return touchedSpots.map((spot) {
-                                final isTarget = spot.barIndex == 1;
-                                final timeIndex = spot.x.toInt() - 1;
-                                final timeSlot = timeIndex >= 0 && timeIndex < timeSlots.length 
-                                    ? timeSlots[timeIndex] 
+                              // Build a tooltip text for each distinct x, then return
+                              // one LineTooltipItem per touched spot (mapping to its x's text).
+                              final Map<double, String> tooltipByX = {};
+
+                              // Prepare grouped data per x
+                              final Map<double, List<LineBarSpot>> groups = {};
+                              for (final spot in touchedSpots) {
+                                groups.putIfAbsent(spot.x, () => []).add(spot);
+                              }
+
+                              groups.forEach((x, spotsAtX) {
+                                final timeIndex = x.toInt() - 1;
+                                final timeSlot = timeIndex >= 0 && timeIndex < timeSlots.length
+                                    ? timeSlots[timeIndex]
                                     : 'Start';
-                                
-                                String? originalTimeKey;
-                                timeRangeMap.forEach((key, value) {
-                                  if (value == timeSlot) {
-                                    originalTimeKey = key;
-                                  }
-                                });
-                                
-                                Map<String, dynamic>? machineData;
-                                if (originalTimeKey != null && rawData.containsKey(originalTimeKey)) {
-                                  machineData = rawData[originalTimeKey];
-                                }
-                                
+
+                                // We only want to show: Time, Target (if any), and a single
+                                // Total line. Do not show per-machine ('Mesin') lines.
                                 String tooltipText = '$timeSlot\n';
-                                
-                                if (isTarget) {
-                                  tooltipText += 'Target: ${spot.y.toInt()}\n';
-                                } else {
-                                  tooltipText += 'Total: ${spot.y.toInt()}\n';
-                                  
-                                  if (machineData != null) {
-                                    for (int i = 1; i <= 5; i++) {
-                                      if (machineData.containsKey('$i') && machineData['$i'] != 0) {
-                                        tooltipText += 'Mesin $i: ${machineData['$i']}\n';
-                                      }
-                                    }
+
+                                // Add Target line(s) first
+                                for (final spot in spotsAtX) {
+                                  final isTarget = spot.barIndex == 1;
+                                  if (isTarget) {
+                                    tooltipText += 'Target: ${spot.y.toInt()}\n';
                                   }
                                 }
-                                
-                                return LineTooltipItem(
-                                  tooltipText.trim(),
-                                  TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                );
+
+                                // Compute a single Total value: take the maximum y among
+                                // non-target spots (if none, show 0)
+                                int totalVal = 0;
+                                for (final spot in spotsAtX) {
+                                  final isTarget = spot.barIndex == 1;
+                                  if (!isTarget) {
+                                    final int val = spot.y.toInt();
+                                    if (val > totalVal) totalVal = val;
+                                  }
+                                }
+                                tooltipText += 'Total: $totalVal\n';
+
+                                tooltipByX[x] = tooltipText.trim();
+                              });
+
+                              // Map back to touchedSpots so the returned list length matches
+                              // touchedSpots (this is expected by fl_chart). Only the
+                              // first spot for a given x will contain the tooltip text;
+                              // subsequent spots at the same x return an invisible item
+                              // to avoid duplicate blocks.
+                              final seenX = <double>{};
+                              return touchedSpots.map((spot) {
+                                final isFirstForX = !seenX.contains(spot.x);
+                                if (isFirstForX) seenX.add(spot.x);
+
+                                if (isFirstForX) {
+                                  final text = tooltipByX[spot.x] ?? '';
+                                  return LineTooltipItem(
+                                    text,
+                                    TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  );
+                                } else {
+                                  // Return a zero-height transparent item so it doesn't
+                                  // increase the tooltip card height.
+                                  return LineTooltipItem(
+                                    '',
+                                    TextStyle(
+                                      color: Colors.transparent,
+                                      fontSize: 0,
+                                      height: 0,
+                                    ),
+                                  );
+                                }
                               }).toList();
                             },
                           ),

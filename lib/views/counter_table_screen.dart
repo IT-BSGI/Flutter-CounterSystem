@@ -123,7 +123,25 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       (e) => e["process_name"]?.toString() == selectedProcessName,
       orElse: () => {},
     );
-    for (final time in visibleTimeSlots) {
+    
+    // Tentukan visibleTimeSlots untuk proses: hanya timeslot yang ada data di proses terpilih
+    Set<String> slotsWithData = {};
+    for (final time in timeSlots) {
+      bool hasData = false;
+      for (int i = 1; i <= 5; i++) {
+        final val = proses["${time}_$i"];
+        if (val != null && val != 0 && val.toString() != '0') {
+          hasData = true;
+          break;
+        }
+      }
+      if (hasData) {
+        slotsWithData.add(time);
+      }
+    }
+    final visibleTimeSlotsProses = timeSlots.where((t) => slotsWithData.contains(t)).toList();
+    
+    for (final time in visibleTimeSlotsProses) {
       final cells = <String, PlutoCell>{};
       cells["time_slot"] = PlutoCell(value: time);
       for (int i = 1; i <= 5; i++) {
@@ -133,7 +151,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         // Ak: akumulatif sampai jam itu
         int akumulatif = 0;
         bool hasData = false;
-        for (final t in visibleTimeSlots) {
+        for (final t in visibleTimeSlotsProses) {
           final val = proses["${t}_$i"];
           if (val != null && val != 0 && val.toString() != '0') hasData = true;
           if (t.compareTo(time) > 0) break;
@@ -190,6 +208,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   
   bool isLoading = true;
   String selectedLine = "A";
+  String selectedContract = "Process"; // Default value untuk Kumitate
+  String selectedContractPart = "Process"; // Default value untuk Part
+  List<String> contractNames = ["Process"]; // Default, akan diambil dari Firestore
+  List<String> contractNamesPart = ["Process"]; // Untuk Part
   DateTime selectedDate = DateTime.now();
   List<Map<String, dynamic>> kumitateData = [];
   List<Map<String, dynamic>> partData = [];
@@ -206,7 +228,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     "08:30", "09:30", "10:30", "11:30", "13:30", 
     "14:30", "15:30", "16:30", "17:55", "18:55", "19:55",
   ];
-    List<String> visibleTimeSlots = [];
+  List<String> visibleTimeSlotsKumitate = [];
+  List<String> visibleTimeSlotsPart = [];
 
   final Map<String, String> timeRangeMap = {
     "06:30": "08:30", 
@@ -305,6 +328,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     super.initState();
     loadData();
     _loadTargets();
+    _loadContractNames(); // Untuk Kumitate
+    _loadContractNamesPart(); // Untuk Part
   }
 
   Future<void> _loadTargets() async {
@@ -354,17 +379,19 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
   Future<List<Map<String, dynamic>>> fetchCounterData(String date, String line, String type) async {
     try {
+      String contractToUse = type == 'Part' ? selectedContractPart : selectedContract;
+      
       final processRef = FirebaseFirestore.instance
           .collection('counter_sistem')
           .doc(date)
           .collection(line)
           .doc(type)
-          .collection('Process');
+          .collection(contractToUse);
 
       final snapshot = await processRef.get();
 
       if (snapshot.docs.isEmpty) {
-        print('No process documents found for Line $line $type on $date');
+        print('No documents found for Line $line, Contract $contractToUse, Type $type on $date');
         return [];
       }
 
@@ -466,7 +493,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
       return processList;
     } catch (e) {
-      print('Error fetching $type counter data: $e');
+      print('Error fetching $type counter data for contract ${type == 'Part' ? selectedContractPart : selectedContract}: $e');
       return [];
     }
   }
@@ -811,7 +838,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       ),
     ];
 
-  for (final time in visibleTimeSlots) {
+  for (final time in visibleTimeSlotsKumitate) {
       for (int i = 1; i <= 5; i++) {
         kumitateColumns.add(PlutoColumn(
           title: "$i",
@@ -1183,7 +1210,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
         int grandTotal = 0;
 
-        for (final time in timeSlots) {
+        for (final time in visibleTimeSlotsKumitate) {
           int timeSlotTotal = 0;
 
           for (int i2 = 1; i2 <= 5; i2++) {
@@ -1274,7 +1301,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   void _buildPartColumnsAndRows() {
     double cumulativeTarget = 0.0;
     partColumnGroups = [
-      for (final time in visibleTimeSlots)
+      for (final time in visibleTimeSlotsPart)
         (() {
           cumulativeTarget += (hourlyTargets[time] ?? 0.0);
           return PlutoColumnGroup(
@@ -1342,7 +1369,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         },
       ),
       
-      for (final time in visibleTimeSlots)
+      for (final time in visibleTimeSlotsPart)
         PlutoColumn(
           title: time,
           field: "${time}_cumulative",
@@ -1360,7 +1387,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           renderer: (rendererContext) {
             final cumulative = rendererContext.cell.value as int;
             double cumulativeTarget = 0.0;
-            for (var slot in visibleTimeSlots) {
+            for (var slot in visibleTimeSlotsPart) {
               cumulativeTarget += (hourlyTargets[slot] ?? 0.0);
               if (slot == time) break;
             }
@@ -1458,17 +1485,16 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     
     if (partData.isNotEmpty) {
       for (final entry in partData) {
-        final cells = <String, PlutoCell>{
-          "process_name": PlutoCell(value: entry["process_name"]),
-          "type": PlutoCell(value: "Part"),
-          "belumKensa": PlutoCell(
-            value: entry["belumKensa"] is String 
-                ? int.tryParse(entry["belumKensa"] as String) ?? 0
-                : (entry["belumKensa"] as num?)?.toInt() ?? 0,
-          ),
-        };
+        final cells = <String, PlutoCell>{};
+        cells["process_name"] = PlutoCell(value: entry["process_name"]);
+        cells["type"] = PlutoCell(value: "Part");
+        cells["belumKensa"] = PlutoCell(
+          value: entry["belumKensa"] is String 
+              ? int.tryParse(entry["belumKensa"] as String) ?? 0
+              : (entry["belumKensa"] as num?)?.toInt() ?? 0,
+        );
 
-      for (final time in visibleTimeSlots) {
+      for (final time in visibleTimeSlotsPart) {
           for (int i = 1; i <= 2; i++) {
             entry["${time}_$i"] = (entry["${time}_$i"] as num?)?.toInt() ?? 0;
           }
@@ -1495,37 +1521,187 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       isLoading = true;
       noDataAvailable = false;
     });
-    print('Loading data for Line $selectedLine on ${DateFormat('yyyy-MM-dd').format(selectedDate)}');
+    
+    print('Loading data for Line $selectedLine, Contract Kumitate: $selectedContract, Contract Part: $selectedContractPart on ${DateFormat('yyyy-MM-dd').format(selectedDate)}');
 
+    // Load contract names first
+    await _loadContractNames();
+    await _loadContractNamesPart();
+    
     final formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-    kumitateData = await fetchCounterData(formattedDate, selectedLine, 'Kumitate');
-    partData = await fetchCounterData(formattedDate, selectedLine, 'Part');
+    
+    try {
+      final kumitateFuture = fetchCounterData(formattedDate, selectedLine, 'Kumitate');
+      final partFuture = fetchCounterData(formattedDate, selectedLine, 'Part');
+      
+      final results = await Future.wait([kumitateFuture, partFuture]);
+      
+      kumitateData = results[0];
+      partData = results[1];
 
-      // Tentukan visibleTimeSlots: hanya timeslot yang ada data di salah satu proses
-      Set<String> slots = {};
-      for (final data in [...kumitateData, ...partData]) {
+      // Tentukan visibleTimeSlots untuk Kumitate: hanya timeslot yang ada data di salah satu proses
+      Set<String> slotsKumitate = {};
+      for (final data in kumitateData) {
         for (final slot in timeSlots) {
           for (int i = 1; i <= 5; i++) {
             if ((data["${slot}_$i"] ?? 0) != 0) {
-              slots.add(slot);
+              slotsKumitate.add(slot);
+              break;
             }
           }
         }
       }
-      visibleTimeSlots = timeSlots.where((t) => slots.contains(t)).toList();
+      visibleTimeSlotsKumitate = timeSlots.where((t) => slotsKumitate.contains(t)).toList();
 
+      // Tentukan visibleTimeSlots untuk Part: hanya timeslot yang ada data di salah satu proses
+      Set<String> slotsPart = {};
+      for (final data in partData) {
+        for (final slot in timeSlots) {
+          for (int i = 1; i <= 2; i++) {
+            if ((data["${slot}_$i"] ?? 0) != 0) {
+              slotsPart.add(slot);
+              break;
+            }
+          }
+        }
+      }
+      visibleTimeSlotsPart = timeSlots.where((t) => slotsPart.contains(t)).toList();
 
-    if (kumitateData.isEmpty && partData.isEmpty) {
+      if (kumitateData.isEmpty && partData.isEmpty) {
+        setState(() {
+          noDataAvailable = true;
+        });
+        print('No data available for the selected criteria');
+      } else {
+        _buildKumitateColumnsAndRows();
+        _buildPartColumnsAndRows();
+        _buildProsesTable();
+        print('Data loaded successfully: ${kumitateData.length} kumitate, ${partData.length} part');
+        print('Visible timeslots Kumitate: $visibleTimeSlotsKumitate');
+        print('Visible timeslots Part: $visibleTimeSlotsPart');
+      }
+    } catch (e) {
+      print('Error loading data: $e');
       setState(() {
         noDataAvailable = true;
+        kumitateData = [];
+        partData = [];
       });
-    } else {
-      _buildKumitateColumnsAndRows();
-      _buildPartColumnsAndRows();
-      _buildProsesTable();
+    } finally {
+      setState(() => isLoading = false);
     }
+  }
 
-    setState(() => isLoading = false);
+  Future<void> _loadContractNames() async {
+    try {
+      final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
+      final docRef = FirebaseFirestore.instance
+          .collection('counter_sistem')
+          .doc(dateStr)
+          .collection(selectedLine)
+          .doc('Kumitate');
+
+      final doc = await docRef.get();
+      
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        
+        // Ambil array dari field "Kontrak"
+        final kontrakArray = data['Kontrak'] as List<dynamic>?;
+        
+        if (kontrakArray != null && kontrakArray.isNotEmpty) {
+          // Convert to List<String> and filter out null/empty values
+          final contracts = kontrakArray
+              .where((item) => item != null && item.toString().isNotEmpty)
+              .map((item) => item.toString())
+              .toList();
+          
+          setState(() {
+            contractNames = contracts.isNotEmpty ? contracts : ["Process"];
+            if (!contractNames.contains(selectedContract)) {
+              selectedContract = contractNames.first;
+            }
+          });
+          print('Loaded contracts for Kumitate: $contractNames');
+        } else {
+          // Fallback jika field Kontrak tidak ada atau kosong
+          setState(() {
+            contractNames = ["Process"];
+            selectedContract = "Process";
+          });
+          print('No Kontrak field found for Kumitate, using default');
+        }
+      } else {
+        // Document tidak ada
+        setState(() {
+          contractNames = ["Process"];
+          selectedContract = "Process";
+        });
+        print('Kumitate document not found');
+      }
+    } catch (e) {
+      print('Error loading contract names for Kumitate: $e');
+      setState(() {
+        contractNames = ["Process"];
+        selectedContract = "Process";
+      });
+    }
+  }
+
+  Future<void> _loadContractNamesPart() async {
+    try {
+      final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
+      final docRef = FirebaseFirestore.instance
+          .collection('counter_sistem')
+          .doc(dateStr)
+          .collection(selectedLine)
+          .doc('Part');
+
+      final doc = await docRef.get();
+      
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        
+        // Ambil array dari field "Kontrak"
+        final kontrakArray = data['Kontrak'] as List<dynamic>?;
+        
+        if (kontrakArray != null && kontrakArray.isNotEmpty) {
+          // Convert to List<String> and filter out null/empty values
+          final contracts = kontrakArray
+              .where((item) => item != null && item.toString().isNotEmpty)
+              .map((item) => item.toString())
+              .toList();
+          
+          setState(() {
+            contractNamesPart = contracts.isNotEmpty ? contracts : ["Process"];
+            if (!contractNamesPart.contains(selectedContractPart)) {
+              selectedContractPart = contractNamesPart.first;
+            }
+          });
+          print('Loaded contracts for Part: $contractNamesPart');
+        } else {
+          // Fallback jika field Kontrak tidak ada atau kosong
+          setState(() {
+            contractNamesPart = ["Process"];
+            selectedContractPart = "Process";
+          });
+          print('No Kontrak field found for Part, using default');
+        }
+      } else {
+        // Document tidak ada
+        setState(() {
+          contractNamesPart = ["Process"];
+          selectedContractPart = "Process";
+        });
+        print('Part document not found');
+      }
+    } catch (e) {
+      print('Error loading contract names for Part: $e');
+      setState(() {
+        contractNamesPart = ["Process"];
+        selectedContractPart = "Process";
+      });
+    }
   }
 
   Widget buildChart(String processName, String type) {
@@ -1792,7 +1968,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
   Future<void> _saveToFirebase() async {
     setState(() => isSaving = true);
-  try {
+    try {
       final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
       final batch = FirebaseFirestore.instance.batch();
       
@@ -1804,7 +1980,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             .doc(dateStr)
             .collection(selectedLine)
             .doc('Part')
-            .collection('Process')
+            .collection(selectedContractPart) // Gunakan selectedContractPart untuk Part
             .doc(processName);
             
         int belumKensa = 0;
@@ -1833,7 +2009,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             .doc(dateStr)
             .collection(selectedLine)
             .doc('Kumitate')
-            .collection('Process')
+            .collection(selectedContract) // Gunakan selectedContract untuk Kumitate
             .doc(processName);
 
         int stock20min = 0;
@@ -1893,7 +2069,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         );
       }
     } finally {
-      // Setelah selesai simpan, refresh data
       await loadData();
       await _loadTargets();
       setState(() => isSaving = false);
@@ -1965,6 +2140,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               });
               loadData();
               _loadTargets();
+              _loadContractNames();
+              _loadContractNamesPart();
             },
           ),
           SizedBox(width: 16),
@@ -2003,6 +2180,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
+                            // Dropdown Line
                             Container(
                               width: 120,
                               decoration: BoxDecoration(
@@ -2035,6 +2213,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                                     });
                                     loadData();
                                     _loadTargets();
+                                    _loadContractNames();
+                                    _loadContractNamesPart();
                                   },
                                   icon: Icon(Icons.arrow_drop_down, size: 20, color: Colors.blue.shade600),
                                   style: TextStyle(color: Colors.black),
@@ -2042,6 +2222,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                                 ),
                               ),
                             ),
+                            
+                            // Target Display
                             Container(
                               decoration: BoxDecoration(
                                 color: Colors.blue.shade100,
@@ -2077,6 +2259,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                                       ],
                                     ),
                             ),
+                            
+                            // Date Picker
                             Container(
                               width: 140,
                               child: TextButton(
@@ -2105,24 +2289,67 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                           ],
                         ),
                       ),
+                      
                       if (kumitateRows.isNotEmpty) ...[
                         _buildTableWidget(
                           title: 'KUMITATE',
                           columns: kumitateColumns,
                           rows: kumitateRows,
                           columnGroups: kumitateColumnGroups,
+                          contractDropdown: DropdownButton<String>(
+                            value: selectedContract,
+                            items: contractNames.map((contract) => DropdownMenuItem(
+                              value: contract,
+                              child: Text(
+                                contract,
+                                style: TextStyle(fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            )).toList(),
+                            onChanged: (value) {
+                              if (value != null && value != selectedContract) {
+                                setState(() {
+                                  selectedContract = value;
+                                  isLoading = true;
+                                });
+                                loadData();
+                              }
+                            },
+                          ),
                         ),
                         SizedBox(height: 30),
                       ],
+                      
                       if (partRows.isNotEmpty) ...[
                         _buildTableWidget(
                           title: 'PART',
                           columns: partColumns,
                           rows: partRows,
                           columnGroups: partColumnGroups,
+                          contractDropdown: DropdownButton<String>(
+                            value: selectedContractPart,
+                            items: contractNamesPart.map((contract) => DropdownMenuItem(
+                              value: contract,
+                              child: Text(
+                                contract,
+                                style: TextStyle(fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            )).toList(),
+                            onChanged: (value) {
+                              if (value != null && value != selectedContractPart) {
+                                setState(() {
+                                  selectedContractPart = value;
+                                  isLoading = true;
+                                });
+                                loadData();
+                              }
+                            },
+                          ),
                         ),
                         SizedBox(height: 30),
                       ],
+                      
                       if (processNames.isNotEmpty)
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2136,7 +2363,11 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                                 value: selectedProcessName,
                                 items: processNames.map((name) => DropdownMenuItem(
                                   value: name,
-                                  child: Text(name),
+                                  child: Text(
+                                    name,
+                                    style: TextStyle(fontSize: 12),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 )).toList(),
                                 onChanged: (value) {
                                   if (value != null && value != selectedProcessName) {
@@ -2162,6 +2393,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     required List<PlutoRow> rows,
     required List<PlutoColumnGroup> columnGroups,
     Widget? processDropdown,
+    Widget? contractDropdown,
   }) {
   const rowHeight = 30.0;
   const headerHeight = 40.0;
@@ -2192,28 +2424,49 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               ),
             ),
           ),
-          if (processDropdown != null)
+          if (processDropdown != null || contractDropdown != null)
             Container(
               alignment: Alignment.centerLeft,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
-                  Text('Pilih Proses: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Container(
-                    margin: const EdgeInsets.only(left: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      border: Border.all(color: Colors.blue.shade500, width: 1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Theme(
-                      data: Theme.of(context).copyWith(
-                        canvasColor: Colors.white,
+                  if (processDropdown != null) ...[
+                    Text('Pilih Proses: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Container(
+                      margin: const EdgeInsets.only(left: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: Colors.blue.shade500, width: 1),
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      child: processDropdown,
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          canvasColor: Colors.white,
+                        ),
+                        child: processDropdown,
+                      ),
                     ),
-                  ),
+                  ],
+                  if (contractDropdown != null) ...[
+                    if (processDropdown != null) SizedBox(width: 16),
+                    Text('Kontrak: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Container(
+                      margin: const EdgeInsets.only(left: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: Colors.blue.shade500, width: 1), // Border biru
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          canvasColor: Colors.white,
+                        ),
+                        child: contractDropdown,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -2232,7 +2485,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                 borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
               ),
               child: PlutoGrid(
-                key: ValueKey('${title}_${selectedDate}_${selectedLine}_${title == 'AKUMULATIF LINE' ? (selectedProcessName ?? '') : ''}'),
+                key: ValueKey('${title}_${selectedDate}_${selectedLine}_${title == 'KUMITATE' ? selectedContract : (title == 'PART' ? selectedContractPart : '')}_${title == 'AKUMULATIF LINE' ? (selectedProcessName ?? '') : ''}'),
                 columns: columns,
                 rows: rows,
                 columnGroups: columnGroups,

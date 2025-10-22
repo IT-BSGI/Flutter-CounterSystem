@@ -22,7 +22,9 @@ class _LineAPageState extends State<LineAPage> {
   late Timer _timer;
   int _lastStableTarget = 0;
   StreamSubscription<DocumentSnapshot>? _planSubscription;
-  StreamSubscription<QuerySnapshot>? _processSubscription;
+  StreamSubscription<DocumentSnapshot>? _kumitateSubscription;
+  List<StreamSubscription<QuerySnapshot>> _contractSubscriptions = [];
+  Map<String, int> _contractData = {};
   
   // New variables for clock and countdown
   String _currentTime = '';
@@ -64,7 +66,10 @@ class _LineAPageState extends State<LineAPage> {
   void dispose() {
     _timer.cancel();
     _planSubscription?.cancel();
-    _processSubscription?.cancel();
+    _kumitateSubscription?.cancel();
+    for (var subscription in _contractSubscriptions) {
+      subscription.cancel();
+    }
     super.dispose();
   }
 
@@ -77,47 +82,47 @@ class _LineAPageState extends State<LineAPage> {
   }
 
   void _updateCountdown(DateTime now) {
-    final currentTime = TimeOfDay.fromDateTime(now);
-    
-    // Find the next interval
-    TimeOfDay? nextInterval;
-    for (final interval in _hourlyIntervals) {
-      if (interval.hour > currentTime.hour || 
-          (interval.hour == currentTime.hour && interval.minute > currentTime.minute)) {
-        nextInterval = interval;
-        break;
-      }
-    }
-    
-    if (nextInterval == null) {
-      _countdown = 'End of Day';
-      _shouldBlink = false;
-      return;
-    }
-    
-    // Calculate time until next interval
-    final nextDateTime = DateTime(
-      now.year, 
-      now.month, 
-      now.day, 
-      nextInterval.hour, 
-      nextInterval.minute
-    );
-    
-    final difference = nextDateTime.difference(now);
-    
-    if (difference.isNegative) {
-      _countdown = '00:00';
-      _shouldBlink = true;
-    } else {
-      final minutes = (difference.inMinutes.remainder(60)).toString().padLeft(2, '0');
-      final seconds = (difference.inSeconds.remainder(60)).toString().padLeft(2, '0');
-      _countdown = '$minutes:$seconds';
-      
-      // Check if less than 1 minute
-      _shouldBlink = difference.inMinutes < 1;
+  final currentTime = TimeOfDay.fromDateTime(now);
+  
+  // Find the next interval
+  TimeOfDay? nextInterval;
+  for (final interval in _hourlyIntervals) {
+    if (interval.hour > currentTime.hour || 
+        (interval.hour == currentTime.hour && interval.minute > currentTime.minute)) {
+      nextInterval = interval;
+      break;
     }
   }
+  
+  if (nextInterval == null) {
+    _countdown = 'End of Day';
+    _shouldBlink = false; // Tidak kedip di end of day
+    return;
+  }
+  
+  // Calculate time until next interval
+  final nextDateTime = DateTime(
+    now.year, 
+    now.month, 
+    now.day, 
+    nextInterval.hour, 
+    nextInterval.minute
+  );
+  
+  final difference = nextDateTime.difference(now);
+  
+  if (difference.isNegative) {
+    _countdown = '00:00';
+    _shouldBlink = true; // Tetap kedip jika waktu habis
+  } else {
+    final minutes = (difference.inMinutes.remainder(60)).toString().padLeft(2, '0');
+    final seconds = (difference.inSeconds.remainder(60)).toString().padLeft(2, '0');
+    _countdown = '$minutes:$seconds';
+    
+    // Kembali ke kondisi normal: kedip hanya jika kurang dari 1 menit
+    _shouldBlink = difference.inMinutes < 1;
+  }
+}
 
   void _setupStreams() {
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.date);
@@ -144,49 +149,102 @@ class _LineAPageState extends State<LineAPage> {
         });
       });
 
-    _processSubscription = _firestore.collection('counter_sistem')
+    // Setup Kumitate document stream to get contract list
+    final kumitateDocRef = _firestore.collection('counter_sistem')
       .doc(dateStr)
       .collection('A')
-      .doc('Kumitate')
-      .collection('Process')
-      .orderBy('sequence', descending: true)
-      .limit(1)
-      .snapshots()
-      .listen((QuerySnapshot snapshot) {
-        if (snapshot.docs.isNotEmpty) {
-          final processData = snapshot.docs.first.data() as Map<String, dynamic>;
-          int totalCount = 0;
-          
-          // Sum up all line counts from the process data
-          processData.forEach((key, value) {
-            if (key != 'sequence' && 
-                key != 'belumKensa' && 
-                key != 'stock_20min' && 
-                key != 'stock_pagi' && 
-                key != 'part' && 
-                value is Map<String, dynamic>) {
-              value.forEach((lineKey, lineValue) {
-                totalCount += (lineValue as int? ?? 0);
-              });
-            }
-          });
-          
-          setState(() {
-            _actual = totalCount;
-          });
-        } else {
-          setState(() {
-            _actual = 0;
-          });
+      .doc('Kumitate');
+
+    _kumitateSubscription = kumitateDocRef.snapshots().listen((DocumentSnapshot snapshot) {
+      if (snapshot.exists) {
+        final data = snapshot.data() as Map<String, dynamic>?;
+        List<String> contractCollections = [];
+        
+        if (data != null && data['Kontrak'] is List) {
+          contractCollections = List<dynamic>.from(data['Kontrak']).map((e) => e.toString()).toList();
         }
-      }, onError: (error) {
-        debugPrint('Error listening to process stream: $error');
-        setState(() {
-          _actual = 0;
-        });
-      });
+
+        // Fallback to legacy structure if no contracts found
+        if (contractCollections.isEmpty) {
+          contractCollections = ['Process'];
+        }
+
+        _setupContractStreams(kumitateDocRef, contractCollections);
+      } else {
+        // If Kumitate document doesn't exist, fallback to legacy structure
+        _setupContractStreams(kumitateDocRef, ['Process']);
+      }
+    }, onError: (error) {
+      debugPrint('Error listening to kumitate stream: $error');
+      // Fallback to legacy structure on error
+      final kumitateDocRef = _firestore.collection('counter_sistem')
+        .doc(dateStr)
+        .collection('A')
+        .doc('Kumitate');
+      _setupContractStreams(kumitateDocRef, ['Process']);
+    });
 
     setState(() => _isLoading = false);
+  }
+
+  void _setupContractStreams(DocumentReference kumitateDocRef, List<String> contractCollections) {
+    // Cancel existing contract subscriptions
+    for (var subscription in _contractSubscriptions) {
+      subscription.cancel();
+    }
+    _contractSubscriptions.clear();
+    _contractData.clear();
+
+    // Setup stream for each contract
+    for (final contractName in contractCollections) {
+      final contractStream = kumitateDocRef
+          .collection(contractName)
+          .orderBy('sequence', descending: true)
+          .limit(1)
+          .snapshots()
+          .listen((QuerySnapshot snapshot) {
+            if (snapshot.docs.isNotEmpty) {
+              final processData = snapshot.docs.first.data() as Map<String, dynamic>;
+              int contractTotal = 0;
+              
+              // Sum up all line counts from the process data
+              processData.forEach((key, value) {
+                if (key != 'sequence' && 
+                    key != 'belumKensa' && 
+                    key != 'stock_20min' && 
+                    key != 'stock_pagi' && 
+                    key != 'part' && 
+                    value is Map<String, dynamic>) {
+                  value.forEach((lineKey, lineValue) {
+                    contractTotal += (lineValue as int? ?? 0);
+                  });
+                }
+              });
+              
+              _contractData[contractName] = contractTotal;
+              _updateTotalActual();
+            } else {
+              _contractData[contractName] = 0;
+              _updateTotalActual();
+            }
+          }, onError: (error) {
+            debugPrint('Error listening to contract $contractName stream: $error');
+            _contractData[contractName] = 0;
+            _updateTotalActual();
+          });
+
+      _contractSubscriptions.add(contractStream);
+    }
+  }
+
+  void _updateTotalActual() {
+    int total = 0;
+    for (final value in _contractData.values) {
+      total += value;
+    }
+    setState(() {
+      _actual = total;
+    });
   }
 
   void _calculateCurrentTarget() {
@@ -272,7 +330,7 @@ class _LineAPageState extends State<LineAPage> {
     final horizontalPadding = screenWidth * 0.04;
     final verticalItemPadding = screenHeight * 0.005; 
     return Scaffold(
-      backgroundColor: Colors.blue.shade100,
+      backgroundColor: const Color.fromARGB(255, 15, 15, 15),
       appBar: AppBar(
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -296,16 +354,22 @@ class _LineAPageState extends State<LineAPage> {
             ),
 
             Padding(
-              padding: const EdgeInsets.only(right: 50.0),
+              padding: const EdgeInsets.only(right: 0.0),
               child: _shouldBlink
                   ? Animate(
-                      effects: [FadeEffect(duration: 500.ms)],
+                      effects: [
+                        TintEffect(
+                          duration: 500.ms,
+                          color: const Color.fromARGB(255, 255, 0, 0),
+                          curve: Curves.easeInOut,
+                        ),
+                      ],
                       onPlay: (controller) => controller.repeat(reverse: true),
                       child: Text(
                         _countdown,
                         style: TextStyle(
                           fontSize: screenWidth < 600 ? 50 : 55, 
-                          color: Colors.red, 
+                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -314,19 +378,15 @@ class _LineAPageState extends State<LineAPage> {
                       _countdown,
                       style: TextStyle(
                         fontSize: screenWidth < 600 ? 50 : 55, 
-                        color: Colors.yellow[100],
+                        color: Colors.white,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-            ),
+            )
           ],
         ),
         centerTitle: false,
-        backgroundColor: Colors.blue.shade700,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        backgroundColor: const Color.fromARGB(255, 10, 10, 10),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -336,12 +396,18 @@ class _LineAPageState extends State<LineAPage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text('Failed to load data', 
-                          style: TextStyle(fontSize: screenWidth < 600 ? 24 : 28)),
+                          style: TextStyle(
+                            fontSize: screenWidth < 600 ? 24 : 28,
+                            color: Colors.white,
+                          )),
                       const SizedBox(height: 20),
                       ElevatedButton(
                         onPressed: () {
                           _planSubscription?.cancel();
-                          _processSubscription?.cancel();
+                          _kumitateSubscription?.cancel();
+                          for (var subscription in _contractSubscriptions) {
+                            subscription.cancel();
+                          }
                           _setupStreams();
                         },
                         child: const Text('Retry'),
@@ -358,9 +424,9 @@ class _LineAPageState extends State<LineAPage> {
                   ),
                   child: SizedBox(
                     height: screenHeight * 0.88, 
-                    child: Card(
-                      elevation: 12,
-                      shape: RoundedRectangleBorder(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color.fromARGB(255, 15, 15, 15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       margin: EdgeInsets.zero,
@@ -403,7 +469,6 @@ class _LineAPageState extends State<LineAPage> {
     required String value,
     required double fontSize,
   }) {
-    // Ukuran font untuk label: 70% dari font data
     final labelFontSize = fontSize * 0.7;
     
     return SizedBox(
@@ -416,7 +481,7 @@ class _LineAPageState extends State<LineAPage> {
             '$label:', 
             style: TextStyle(
               fontSize: labelFontSize,
-              color: Colors.black,
+              color: const Color.fromARGB(255, 255, 255, 255),
               fontWeight: FontWeight.bold,
               height: 0.9,
             ),
@@ -426,7 +491,7 @@ class _LineAPageState extends State<LineAPage> {
             style: TextStyle(
               fontSize: fontSize,
               fontWeight: FontWeight.w900, 
-              color: Colors.red,
+              color: const Color.fromARGB(255, 255, 0, 0),
               height: 0.9,
             ),
           ),

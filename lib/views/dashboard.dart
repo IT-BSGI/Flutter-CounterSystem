@@ -6,6 +6,7 @@ import 'counter_table_screen.dart';
 import 'settings.dart';
 import 'target.dart';
 import 'final_page.dart';
+import 'contract_data_screen.dart'; // Import file baru
 
 class DashboardPanel extends StatefulWidget {
   @override
@@ -20,8 +21,9 @@ class _DashboardPanelState extends State<DashboardPanel> {
     HomePage(),
     CounterTableScreen(),
     FinalPage(),
+    ContractDataScreen(),
     EditProcessesScreen(),
-    TargetPage(), // Added target page
+    TargetPage(), 
   ];
 
   @override
@@ -69,6 +71,11 @@ class _DashboardPanelState extends State<DashboardPanel> {
                     icon: Icon(Icons.check_circle_outline),
                     selectedIcon: Icon(Icons.check_circle),
                     label: Text('Final'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.assignment_outlined),
+                    selectedIcon: Icon(Icons.assignment),
+                    label: Text('Contract'),
                   ),
                   NavigationRailDestination(
                     icon: Icon(Icons.settings_outlined),

@@ -115,13 +115,44 @@ class _FinalPageState extends State<FinalPage> {
       }
     }
 
-    // Tambahkan kolom grup tanggal
+    // Tambahkan kolom grup tanggal (Target dulu, lalu Output)
     for (final d in daysInMonth) {
       final date = DateTime(selectedYear, selectedMonth, d);
       final isWeekend = date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
       final outField = 'day_${d}_out';
       final targetField = 'day_${d}_target';
       columns.addAll([
+        PlutoColumn(
+          title: 'Target',
+          field: targetField,
+          type: PlutoColumnType.text(),
+          width: 60,
+          titleTextAlign: PlutoColumnTextAlign.center,
+          textAlign: PlutoColumnTextAlign.center,
+          backgroundColor: Colors.blue.shade200,
+          enableColumnDrag: false,
+          enableDropToResize: false,
+          enableContextMenu: false,
+          enableSorting: false,
+          enableEditingMode: false,
+          cellPadding: EdgeInsets.zero,
+          renderer: (ctx) => Container(
+            constraints: BoxConstraints.expand(),
+            alignment: Alignment.center,
+            padding: EdgeInsets.zero,
+            decoration: BoxDecoration(
+              color: isWeekend ? Colors.grey.shade300 : Colors.blue.shade50,
+              border: Border(
+                right: BorderSide(color: Colors.blue, width: 1),
+                bottom: BorderSide(color: Colors.blue, width: 1),
+              ),
+            ),
+            child: Text(
+              ctx.cell.value.toString(),
+              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14, color: Colors.black),
+            ),
+          ),
+        ),
         PlutoColumn(
           title: 'Out',
           field: outField,
@@ -169,55 +200,25 @@ class _FinalPageState extends State<FinalPage> {
             );
           },
         ),
-        PlutoColumn(
-          title: 'Target',
-          field: targetField,
-          type: PlutoColumnType.text(),
-          width: 60,
-          titleTextAlign: PlutoColumnTextAlign.center,
-          textAlign: PlutoColumnTextAlign.center,
-          backgroundColor: Colors.blue.shade200,
-          enableColumnDrag: false,
-          enableDropToResize: false,
-          enableContextMenu: false,
-          enableSorting: false,
-          enableEditingMode: false,
-          cellPadding: EdgeInsets.zero,
-          renderer: (ctx) => Container(
-            constraints: BoxConstraints.expand(),
-            alignment: Alignment.center,
-            padding: EdgeInsets.zero,
-            decoration: BoxDecoration(
-              color: isWeekend ? Colors.grey.shade300 : Colors.blue.shade50,
-              border: Border(
-                right: BorderSide(color: Colors.blue, width: 1),
-                bottom: BorderSide(color: Colors.blue, width: 1),
-              ),
-            ),
-            child: Text(
-              ctx.cell.value.toString(),
-              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14, color: Colors.black),
-            ),
-          ),
-        ),
       ]);
       columnGroups.add(
         PlutoColumnGroup(
           title: d.toString(),
-          fields: [outField, targetField],
+          fields: [targetField, outField],
           backgroundColor: Colors.blue.shade300,
         ),
       );
     }
-    columns.add(
+    // Kolom total menjadi grup: target_akum, output_akum, selisih
+    columns.addAll([
       PlutoColumn(
-        title: 'Total',
-        field: 'total',
+        title: 'Target',
+        field: 'total_target',
         type: PlutoColumnType.text(),
-        width: 90,
+        width: 70,
         titleTextAlign: PlutoColumnTextAlign.center,
         textAlign: PlutoColumnTextAlign.center,
-        backgroundColor: Colors.yellow.shade300, // header kuning 1 tingkat di atas cell
+        backgroundColor: Colors.yellow.shade300,
         enableColumnDrag: false,
         enableDropToResize: false,
         enableContextMenu: false,
@@ -241,70 +242,168 @@ class _FinalPageState extends State<FinalPage> {
           ),
         ),
       ),
-    );
+      PlutoColumn(
+        title: 'Output',
+        field: 'total_output',
+        type: PlutoColumnType.text(),
+        width: 70,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        textAlign: PlutoColumnTextAlign.center,
+        backgroundColor: Colors.yellow.shade300,
+        enableColumnDrag: false,
+        enableDropToResize: false,
+        enableContextMenu: false,
+        enableSorting: false,
+        enableEditingMode: false,
+        cellPadding: EdgeInsets.zero,
+        renderer: (ctx) => Container(
+          constraints: BoxConstraints.expand(),
+          alignment: Alignment.center,
+          padding: EdgeInsets.zero,
+          decoration: BoxDecoration(
+            color: Colors.yellow.shade100,
+            border: Border(
+              right: BorderSide(color: Colors.blue, width: 1),
+              bottom: BorderSide(color: Colors.blue, width: 1),
+            ),
+          ),
+          child: Text(
+            ctx.cell.value.toString(),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black),
+          ),
+        ),
+      ),
+      PlutoColumn(
+        title: 'Selisih',
+        field: 'total_selisih',
+        type: PlutoColumnType.text(),
+        width: 70,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        textAlign: PlutoColumnTextAlign.center,
+        backgroundColor: Colors.yellow.shade300,
+        enableColumnDrag: false,
+        enableDropToResize: false,
+        enableContextMenu: false,
+        enableSorting: false,
+        enableEditingMode: false,
+        cellPadding: EdgeInsets.zero,
+        renderer: (ctx) => Container(
+          constraints: BoxConstraints.expand(),
+          alignment: Alignment.center,
+          padding: EdgeInsets.zero,
+          decoration: BoxDecoration(
+            color: Colors.yellow.shade100,
+            border: Border(
+              right: BorderSide(color: Colors.blue, width: 1),
+              bottom: BorderSide(color: Colors.blue, width: 1),
+            ),
+          ),
+          child: Text(
+            ctx.cell.value.toString(),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black),
+          ),
+        ),
+      ),
+    ]);
     columnGroups.add(
-      PlutoColumnGroup(title: '', fields: ['total'], backgroundColor: Colors.yellow.shade300),
+      PlutoColumnGroup(title: 'Total', fields: ['total_target', 'total_output', 'total_selisih'], backgroundColor: Colors.yellow.shade300),
     );
 
     rows = [];
     for (final line in lines) {
       Map<int, String> lineData = {};
       Map<int, int> lineDataInt = {};
-      // Optimasi: query paralel untuk semua hari dalam bulan ini
-      final processSnaps = await Future.wait(daysInMonth.map((day) async {
+      // Optimasi: untuk setiap hari, ambil dokumen terakhir (berdasarkan sequence)
+      // dari setiap kontrak yang terdaftar di dokumen 'Kumitate'. Struktur baru
+      // menyimpan kontrak di field 'Kontrak' (array). Jika tidak ada, fallback
+      // ke koleksi legacy 'Process'. Hasilnya adalah total (sum) dari semua
+      // dokumen terakhir per kontrak untuk hari tersebut.
+      final processCounts = await Future.wait(daysInMonth.map((day) async {
         final date = DateTime(selectedYear, selectedMonth, day);
         final dateStr = DateFormat('yyyy-MM-dd').format(date);
+        int totalCount = 0;
         try {
-          return await FirebaseFirestore.instance
+          final kumitateDocRef = FirebaseFirestore.instance
               .collection('counter_sistem')
               .doc(dateStr)
               .collection(line)
-              .doc('Kumitate')
-              .collection('Process')
-              .orderBy('sequence', descending: true)
-              .limit(1)
-              .get();
+              .doc('Kumitate');
+
+          final kumitateSnap = await kumitateDocRef.get();
+          List<String> contractCollections = [];
+          if (kumitateSnap.exists) {
+            final data = kumitateSnap.data();
+            if (data != null && data['Kontrak'] is List) {
+              contractCollections = List<dynamic>.from(data['Kontrak']).map((e) => e.toString()).toList();
+            }
+          }
+
+          if (contractCollections.isEmpty) {
+            // fallback ke struktur lama
+            contractCollections = ['Process'];
+          }
+
+          for (final contractName in contractCollections) {
+            try {
+              final latestSnap = await kumitateDocRef
+                  .collection(contractName)
+                  .orderBy('sequence', descending: true)
+                  .limit(1)
+                  .get();
+
+              if (latestSnap.docs.isEmpty) continue;
+
+              final processData = latestSnap.docs.first.data();
+              processData.forEach((key, value) {
+                if (key != 'sequence' &&
+                    key != 'belumKensa' &&
+                    key != 'stock_20min' &&
+                    key != 'stock_pagi' &&
+                    key != 'part' &&
+                    value is Map<String, dynamic>) {
+                  value.forEach((lineKey, lineValue) {
+                    totalCount += (lineValue as int? ?? 0);
+                  });
+                }
+              });
+            } catch (e) {
+              // ignore per-contract errors but continue with others
+              print('Error reading latest for $line $dateStr contract $contractName: $e');
+            }
+          }
         } catch (e) {
           print('Firestore error on $line $day: $e');
-          return null;
         }
+
+        return totalCount;
       }));
+
       for (int i = 0; i < daysInMonth.length; i++) {
         final day = daysInMonth[i];
-        final snap = processSnaps[i];
-        int totalCount = 0;
-        if (snap != null && snap.docs.isNotEmpty) {
-          final processData = snap.docs.first.data();
-          processData.forEach((key, value) {
-            if (key != 'sequence' && 
-                key != 'belumKensa' && 
-                key != 'stock_20min' && 
-                key != 'stock_pagi' && 
-                key != 'part' && 
-                value is Map<String, dynamic>) {
-              value.forEach((lineKey, lineValue) {
-                totalCount += (lineValue as int? ?? 0);
-              });
-            }
-          });
-        }
+        final totalCount = processCounts[i];
         lineData[day] = totalCount > 0 ? totalCount.toString() : ' ';
         lineDataInt[day] = totalCount;
       }
       final cells = <String, PlutoCell>{
         'line': PlutoCell(value: 'Line $line'),
       };
-      int total = 0;
+      int totalOutput = 0;
+      double totalTarget = 0;
       for (final day in daysInMonth) {
         final outField = 'day_${day}_out';
         final targetField = 'day_${day}_target';
-        cells[outField] = PlutoCell(value: lineData[day] ?? ' ');
-        final val = lineDataInt[day] ?? 0;
-        if (val > 0) total += val;
+        // Target dulu, baru output
         final target = lineTargetPerDay[line]?[day] ?? 0;
         cells[targetField] = PlutoCell(value: target > 0 ? target.toStringAsFixed(0) : ' ');
+        final val = lineDataInt[day] ?? 0;
+        cells[outField] = PlutoCell(value: lineData[day] ?? ' ');
+        if (val > 0) totalOutput += val;
+        if (target > 0) totalTarget += target;
       }
-      cells['total'] = PlutoCell(value: total > 0 ? total.toString() : ' ');
+      final selisih = totalOutput - totalTarget;
+      cells['total_target'] = PlutoCell(value: totalTarget > 0 ? totalTarget.toStringAsFixed(0) : ' ');
+      cells['total_output'] = PlutoCell(value: totalOutput > 0 ? totalOutput.toString() : ' ');
+      cells['total_selisih'] = PlutoCell(value: (totalTarget > 0 || totalOutput > 0) ? selisih.toStringAsFixed(0) : ' ');
       rows.add(PlutoRow(cells: cells));
     }
     setState(() => isLoading = false);
