@@ -6,7 +6,8 @@ import 'counter_table_screen.dart';
 import 'settings.dart';
 import 'target.dart';
 import 'final_page.dart';
-import 'contract_data_screen.dart'; // Import file baru
+import 'contract_data_screen.dart';
+import 'all_counter_data_screen.dart'; // Import file baru untuk Data
 
 class DashboardPanel extends StatefulWidget {
   @override
@@ -19,7 +20,8 @@ class _DashboardPanelState extends State<DashboardPanel> {
 
   final List<Widget> _pages = [
     HomePage(),
-    CounterTableScreen(),
+    AllCounterDataScreen(), // Menu Data baru
+    CounterTableScreen(),   // Menu Data Contracts (yang sebelumnya Data)
     FinalPage(),
     ContractDataScreen(),
     EditProcessesScreen(),
@@ -63,9 +65,14 @@ class _DashboardPanelState extends State<DashboardPanel> {
                     label: Text('Home'),
                   ),
                   NavigationRailDestination(
-                    icon: Icon(Icons.bar_chart_outlined),
-                    selectedIcon: Icon(Icons.bar_chart),
+                    icon: Icon(Icons.table_chart_outlined),
+                    selectedIcon: Icon(Icons.table_chart),
                     label: Text('Data'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.assignment_outlined),
+                    selectedIcon: Icon(Icons.assignment),
+                    label: Text('Data Contracts'),
                   ),
                   NavigationRailDestination(
                     icon: Icon(Icons.check_circle_outline),
@@ -73,8 +80,8 @@ class _DashboardPanelState extends State<DashboardPanel> {
                     label: Text('Final'),
                   ),
                   NavigationRailDestination(
-                    icon: Icon(Icons.assignment_outlined),
-                    selectedIcon: Icon(Icons.assignment),
+                    icon: Icon(Icons.description_outlined),
+                    selectedIcon: Icon(Icons.description),
                     label: Text('Contract'),
                   ),
                   NavigationRailDestination(

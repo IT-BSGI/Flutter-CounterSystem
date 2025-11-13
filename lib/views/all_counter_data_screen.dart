@@ -7,12 +7,12 @@ import 'package:excel/excel.dart' as excel;
 import 'package:file_saver/file_saver.dart';
 import 'dart:typed_data';
 
-class CounterTableScreen extends StatefulWidget {
+class AllCounterDataScreen extends StatefulWidget {
   @override
-  _CounterTableScreenState createState() => _CounterTableScreenState();
+  _AllCounterDataScreenState createState() => _AllCounterDataScreenState();
 }
 
-class _CounterTableScreenState extends State<CounterTableScreen> {
+class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
   // Untuk tabel Proses (akumulatif 12345 per timeslot)
   List<PlutoColumn> prosesColumns = [];
   List<PlutoRow> prosesRows = [];
@@ -76,7 +76,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           width: 60,
           titleTextAlign: PlutoColumnTextAlign.center,
           textAlign: PlutoColumnTextAlign.center,
-          backgroundColor: Colors.blue.shade200, // Sama dengan kolom Jam
+          backgroundColor: Colors.blue.shade200,
           enableColumnDrag: false,
           enableContextMenu: false,
           enableSorting: false,
@@ -108,22 +108,60 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     // Baris: setiap timeslot, data dari proses terpilih
     prosesRows = [];
     final prosesList = List<Map<String, dynamic>>.from(kumitateData);
-    prosesList.sort((a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
+    
+    // Urutkan berdasarkan urutan proses yang ditentukan
+    prosesList.sort((a, b) {
+      final aIndex = kumitateProcessOrder.indexOf(a['process_name'] ?? '');
+      final bIndex = kumitateProcessOrder.indexOf(b['process_name'] ?? '');
+      if (aIndex == -1) return 1;
+      if (bIndex == -1) return -1;
+      return aIndex.compareTo(bIndex);
+    });
+    
     // Ambil hanya proses dengan sequence != 0 (sesuai tabel kumitate)
     processNames = prosesList
       .where((e) => (e['sequence'] ?? 0) != 0)
       .map((e) => e["process_name"]?.toString() ?? "")
       .where((e) => e.isNotEmpty)
       .toList();
+      
+    // Urutkan processNames berdasarkan urutan yang ditentukan
+    processNames.sort((a, b) {
+      final aIndex = kumitateProcessOrder.indexOf(a);
+      final bIndex = kumitateProcessOrder.indexOf(b);
+      if (aIndex == -1) return 1;
+      if (bIndex == -1) return -1;
+      return aIndex.compareTo(bIndex);
+    });
+    
     // Pastikan selectedProcessName selalu valid
     if (selectedProcessName == null || !processNames.contains(selectedProcessName)) {
       selectedProcessName = processNames.isNotEmpty ? processNames.first : null;
     }
+    
     final proses = prosesList.firstWhere(
       (e) => e["process_name"]?.toString() == selectedProcessName,
       orElse: () => {},
     );
-    for (final time in visibleTimeSlots) {
+    
+    // Tentukan visibleTimeSlots untuk proses: hanya timeslot yang ada data di proses terpilih
+    Set<String> slotsWithData = {};
+    for (final time in timeSlots) {
+      bool hasData = false;
+      for (int i = 1; i <= 5; i++) {
+        final val = proses["${time}_$i"];
+        if (val != null && val != 0 && val.toString() != '0') {
+          hasData = true;
+          break;
+        }
+      }
+      if (hasData) {
+        slotsWithData.add(time);
+      }
+    }
+    final visibleTimeSlotsProses = timeSlots.where((t) => slotsWithData.contains(t)).toList();
+    
+    for (final time in visibleTimeSlotsProses) {
       final cells = <String, PlutoCell>{};
       cells["time_slot"] = PlutoCell(value: time);
       for (int i = 1; i <= 5; i++) {
@@ -133,7 +171,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         // Ak: akumulatif sampai jam itu
         int akumulatif = 0;
         bool hasData = false;
-        for (final t in visibleTimeSlots) {
+        for (final t in visibleTimeSlotsProses) {
           final val = proses["${t}_$i"];
           if (val != null && val != 0 && val.toString() != '0') hasData = true;
           if (t.compareTo(time) > 0) break;
@@ -151,14 +189,11 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     this.prosesRows = prosesRows;
     this.prosesColumnGroups = prosesColumnGroups;
   }
+  
   List<PlutoColumnGroup> prosesColumnGroups = [];
-  bool get isEditableNow {
-    final now = DateTime.now();
-    final isToday = selectedDate.year == now.year && selectedDate.month == now.month && selectedDate.day == now.day;
-    final before0830 = now.hour < 8 || (now.hour == 8 && now.minute < 30);
-    return isToday && before0830;
-  }
+  
   List<PlutoColumnGroup> partColumnGroups = [];
+  
   // Fungsi untuk menentukan warna baris PART
   Color? getPartRowColor(String processName) {
     switch (processName) {
@@ -181,6 +216,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         return null;
     }
   }
+  
   List<PlutoColumn> kumitateColumns = [];
   List<PlutoRow> kumitateRows = [];
   List<PlutoColumnGroup> kumitateColumnGroups = [];
@@ -190,25 +226,20 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   
   bool isLoading = true;
   String selectedLine = "A";
-  String selectedContract = "Process"; // Default value
-  List<String> contractNames = ["Process"]; // Default, akan diambil dari Firestore
   DateTime selectedDate = DateTime.now();
   List<Map<String, dynamic>> kumitateData = [];
   List<Map<String, dynamic>> partData = [];
   double? dailyTarget;
   Map<String, double> hourlyTargets = {};
   bool isTargetLoading = true;
-  bool isSaving = false;
   bool noDataAvailable = false;
-
-  PlutoGridStateManager? _kumitateStateManager;
-  PlutoGridStateManager? _partStateManager;
 
   final List<String> timeSlots = [
     "08:30", "09:30", "10:30", "11:30", "13:30", 
     "14:30", "15:30", "16:30", "17:55", "18:55", "19:55",
   ];
-    List<String> visibleTimeSlots = [];
+  
+  List<String> visibleTimeSlots = [];
 
   final Map<String, String> timeRangeMap = {
     "06:30": "08:30", 
@@ -284,6 +315,36 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     "Cuff IN", "Cuff OUT",
   ];
 
+  // Urutan proses Kumitate yang diinginkan
+  final List<String> kumitateProcessOrder = [
+    "Maekata JinuiFuse",
+    "Maekata Jinui",
+    "Maekata Fuse",
+    "Maekata Interlock",
+    "Eri Pipping",
+    "Eri Tsuke",
+    "Overlock Eri Tsuke",
+    "Eri Fuse",
+    "Sode Tsuke Interlock",
+    "Sode Tsuke Honnui",
+    "Iron Sode Tsuke",
+    "Sode Fuse",
+    "Sode Fuse 8mm",
+    "Sode Fuse 1mm",
+    "Deodorant Tape",
+    "Wakinui Interlock",
+    "Wakinui Nihonbari",
+    "Waki Honnui",
+    "Iron Waki",
+    "Waki Fuse",
+    "Cuff Tsuke",
+    "Kazari Cuff",
+    "Mitsumaki",
+    "Gazet",
+    "Kandome",
+    "Bottan Tsuke"
+  ];
+
   // Map nama process ke huruf Jepang (hiragana)
   final Map<String, String> partProcessHiragana = {
     "Maemi IN": "まえみ いん",
@@ -307,8 +368,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     super.initState();
     loadData();
     _loadTargets();
-    _loadContractNames(); // Tambahkan ini
-
   }
 
   Future<void> _loadTargets() async {
@@ -357,11 +416,15 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           styles.sort((a, b) => a['key'].compareTo(b['key']));
 
           // Hitung target per jam untuk style normal (08:30 - 16:30)
-          // Alokasi berbasis detik per slot sehingga sisa waktu di slot dapat dipakai oleh style berikutnya
+          // Alokasi sekarang berbasis detik per slot sehingga sisa waktu di slot
+          // yang sama dapat dipakai oleh style berikutnya.
           List<String> normalTimeSlots = ['08:30', '09:30', '10:30', '11:30', '13:30', '14:30', '15:30', '16:30'];
           int currentTimeSlotIndex = 0;
 
-          final Map<String, double> slotRemainingSeconds = { for (var s in normalTimeSlots) s: 3600.0 };
+          // Map untuk menyimpan sisa detik pada masing-masing slot (mulai 3600 detik)
+          final Map<String, double> slotRemainingSeconds = {
+            for (var s in normalTimeSlots) s: 3600.0
+          };
 
           for (var style in styles) {
             double remainingQuantity = style['quantity'];
@@ -369,16 +432,21 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
             if (timePerPcs <= 0) continue;
 
+            // Alokasikan potongan style ke slot saat ini dan selanjutnya berdasarkan sisa detik
             while (remainingQuantity > 0 && currentTimeSlotIndex < normalTimeSlots.length) {
               final currentTimeSlot = normalTimeSlots[currentTimeSlotIndex];
               double slotSec = slotRemainingSeconds[currentTimeSlot] ?? 3600.0;
 
               if (slotSec <= 1e-9) {
+                // Kalau slot habis, lanjut ke slot berikutnya
                 currentTimeSlotIndex++;
                 continue;
               }
 
+              // Berapa pcs yang bisa diproduksi pada sisa detik slot ini
               final possiblePieces = slotSec / timePerPcs;
+
+              // Jika tidak bisa memproduksi satupun (timePerPcs > slotSec sangat besar), maju ke slot berikutnya
               if (possiblePieces <= 1e-9) {
                 currentTimeSlotIndex++;
                 continue;
@@ -390,18 +458,23 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               remainingQuantity -= allocated;
               totalDailyTarget += allocated;
 
+              // Kurangi sisa detik slot
               slotSec -= allocated * timePerPcs;
               slotRemainingSeconds[currentTimeSlot] = slotSec;
 
-              if (slotSec <= 1e-9) currentTimeSlotIndex++;
+              // Jika slot habis, pindah ke slot berikutnya; jika tidak, artinya style habis
+              if (slotSec <= 1e-9) {
+                currentTimeSlotIndex++;
+              }
             }
 
+            // Jika masih ada sisa quantity tapi waktu normal sudah habis, hentikan proses
             if (remainingQuantity > 0 && currentTimeSlotIndex >= normalTimeSlots.length) {
               break;
             }
           }
 
-          // Hitung overtime (sama: gunakan sisa detik per slot overtime)
+          // Hitung overtime
           if (targetMap.containsKey('overtime')) {
             final overtimeData = targetMap['overtime'] as Map<String, dynamic>;
             double overtimeQuantity = (overtimeData['quantity'] as num?)?.toDouble() ?? 0.0;
@@ -410,15 +483,26 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             if (overtimeTimePerPcs > 0 && overtimeQuantity > 0) {
               List<String> overtimeTimeSlots = ['17:55', '18:55', '19:55'];
               double remainingOvertime = overtimeQuantity;
-              final Map<String, double> overtimeSlotSec = { for (var s in overtimeTimeSlots) s: 3600.0 };
+
+              // Inisialisasi sisa detik overtime per slot
+              final Map<String, double> overtimeSlotSec = {
+                for (var s in overtimeTimeSlots) s: 3600.0
+              };
+
               int otIndex = 0;
               while (remainingOvertime > 0 && otIndex < overtimeTimeSlots.length) {
                 final slot = overtimeTimeSlots[otIndex];
                 double slotSec = overtimeSlotSec[slot] ?? 3600.0;
-                if (slotSec <= 1e-9) { otIndex++; continue; }
+                if (slotSec <= 1e-9) {
+                  otIndex++;
+                  continue;
+                }
 
                 final possiblePieces = slotSec / overtimeTimePerPcs;
-                if (possiblePieces <= 1e-9) { otIndex++; continue; }
+                if (possiblePieces <= 1e-9) {
+                  otIndex++;
+                  continue;
+                }
 
                 final allocated = possiblePieces >= remainingOvertime ? remainingOvertime : possiblePieces;
                 calculatedHourlyTargets[slot] = (calculatedHourlyTargets[slot] ?? 0.0) + allocated;
@@ -472,108 +556,189 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     }
   }
 
+  // METODE YANG SAMA PERSIS DENGAN counter_table_screen.dart
   Future<List<Map<String, dynamic>>> fetchCounterData(String date, String line, String type) async {
     try {
-      final processRef = FirebaseFirestore.instance
+      // Dapatkan semua kontrak yang tersedia
+      final parentDocRef = FirebaseFirestore.instance
           .collection('counter_sistem')
           .doc(date)
           .collection(line)
-          .doc(type)
-          .collection(selectedContract);
+          .doc(type);
 
-      final snapshot = await processRef.get();
-
-      if (snapshot.docs.isEmpty) {
-        print('No documents found for Line $line, Contract $selectedContract, Type $type on $date');
+      final parentDoc = await parentDocRef.get();
+      
+      if (!parentDoc.exists) {
+        print('No parent document found for Line $line, Type $type on $date');
         return [];
       }
 
-      List<Map<String, dynamic>> processList = [];
+      // Ambil semua kontrak yang tersedia
+      final kontrakArray = parentDoc.data()?['Kontrak'] as List<dynamic>?;
+      final contractNames = (kontrakArray ?? ['Process'])
+          .where((item) => item != null && item.toString().isNotEmpty)
+          .map((item) => item.toString())
+          .toList();
+
+      if (contractNames.isEmpty) {
+        print('No contracts found for Line $line, Type $type on $date');
+        return [];
+      }
+
+      print('Processing contracts for $type: $contractNames');
+
+      // Map untuk menggabungkan data dari semua kontrak
+      final Map<String, Map<String, dynamic>> mergedData = {};
   final maxLines = type == 'Part' ? 3 : 5;
 
-      for (var doc in snapshot.docs) {
-        final processData = doc.data();
-        final partData = processData['part'] ?? {};
-        final part1 = partData is String ? partData : partData['part1'] ?? "";
-        final part2 = partData is String ? "" : partData['part2'] ?? "";
+      // Loop melalui semua kontrak dan gabungkan data
+      for (final contract in contractNames) {
+        final processRef = FirebaseFirestore.instance
+            .collection('counter_sistem')
+            .doc(date)
+            .collection(line)
+            .doc(type)
+            .collection(contract);
 
-        final processMap = <String, dynamic>{
-          "process_name": doc.id.replaceAll('_', ' '),
-          "sequence": (processData['sequence'] as num?)?.toInt() ?? 0,
-          "belumKensa": processData['belumKensa'] is String 
-              ? int.tryParse(processData['belumKensa'] as String) ?? 0
-              : (processData['belumKensa'] as num?)?.toInt() ?? 0,
-          "stock_20min": processData['stock_20min'] is String 
-              ? int.tryParse(processData['stock_20min'] as String) ?? 0
-              : (processData['stock_20min'] as num?)?.toInt() ?? 0,
-          "stock_pagi": processData['stock_pagi'] ?? {
-            '1': 0, '2': 0, '3': 0, '4': 0, 'stock': 0
-          },
-          "part": part1,
-          "part_2": part2,
-          "type": type,
-          "raw_data": processData,
-        };
+        final snapshot = await processRef.get();
+
+        if (snapshot.docs.isEmpty) {
+          print('No documents found for Line $line, Contract $contract, Type $type on $date');
+          continue;
+        }
+
+        for (var doc in snapshot.docs) {
+          final processData = doc.data();
+          final processName = doc.id.replaceAll('_', ' ');
+          final partData = processData['part'] ?? {};
+          final part1 = partData is String ? partData : partData['part1'] ?? "";
+          final part2 = partData is String ? "" : partData['part2'] ?? "";
+
+          // Inisialisasi data proses jika belum ada
+          if (!mergedData.containsKey(processName)) {
+            mergedData[processName] = {
+              "process_name": processName,
+              "sequence": (processData['sequence'] as num?)?.toInt() ?? 0,
+              "belumKensa": 0,
+              "stock_20min": 0,
+              "stock_pagi": {
+                '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, 'stock': 0
+              },
+              "part": part1,
+              "part_2": part2,
+              "type": type,
+              "raw_data": {}, // Simpan raw data untuk processing
+            };
+
+            // Inisialisasi data timeslot
+            for (final time in timeSlots) {
+              mergedData[processName]!["${time}_cumulative"] = 0;
+              for (int i = 1; i <= maxLines; i++) {
+                mergedData[processName]!["${time}_$i"] = 0;
+              }
+            }
+          }
+
+          // Simpan raw data untuk processing
+          mergedData[processName]!["raw_data_$contract"] = processData;
+        }
+      }
+
+      // Process data untuk setiap proses yang sudah digabungkan
+      for (final processName in mergedData.keys) {
+        final process = mergedData[processName]!;
+  final maxLines = process["type"] == 'Part' ? 3 : 5;
 
         Map<String, int> cumulativeData = {};
         for (final time in timeSlots) {
           cumulativeData[time] = 0;
         }
 
-        processData.forEach((key, value) {
-          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
-            final timeKey = key;
-            final mappedTime = timeRangeMap[timeKey];
-            
-            if (mappedTime != null) {
-              int slotTotal = 0;
-              for (int i = 1; i <= maxLines; i++) {
-                final dynamic countValue = value['$i'];
-                final int count = countValue is num 
-                    ? countValue.toInt() 
-                    : int.tryParse(countValue.toString()) ?? 0;
-                slotTotal += count;
-              }
-              cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
-            }
-          }
-        });
+        // Process semua kontrak untuk proses ini
+        for (final contract in contractNames) {
+          final rawDataKey = "raw_data_$contract";
+          if (!process.containsKey(rawDataKey)) continue;
 
+          final processData = process[rawDataKey] as Map<String, dynamic>;
+
+          // Tambahkan belumKensa
+          final belumKensa = processData['belumKensa'] is String 
+              ? int.tryParse(processData['belumKensa'] as String) ?? 0
+              : (processData['belumKensa'] as num?)?.toInt() ?? 0;
+          process["belumKensa"] = (process["belumKensa"] as int) + belumKensa;
+
+          // Tambahkan stock_20min
+          final stock20min = processData['stock_20min'] is String 
+              ? int.tryParse(processData['stock_20min'] as String) ?? 0
+              : (processData['stock_20min'] as num?)?.toInt() ?? 0;
+          process["stock_20min"] = (process["stock_20min"] as int) + stock20min;
+
+          // Tambahkan stock_pagi
+          final stockPagi = processData['stock_pagi'] as Map<String, dynamic>? ?? {
+            '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, 'stock': 0
+          };
+          for (int i = 1; i <= 5; i++) {
+            final currentVal = (process["stock_pagi"] as Map<String, dynamic>)['$i'] ?? 0;
+            final newVal = stockPagi['$i'] ?? 0;
+            (process["stock_pagi"] as Map<String, dynamic>)['$i'] = 
+                (currentVal is int ? currentVal : 0) + (newVal is int ? newVal : int.tryParse(newVal.toString()) ?? 0);
+          }
+
+          // Hitung stock pagi total
+          final stockPagiMap = process["stock_pagi"] as Map<String, dynamic>;
+          stockPagiMap['stock'] = 
+              (stockPagiMap['1'] as int) + 
+              (stockPagiMap['2'] as int) + 
+              (stockPagiMap['3'] as int) + 
+              (stockPagiMap['4'] as int) + 
+              (stockPagiMap['5'] as int);
+
+          // Process data timeslot - SAMA PERSIS DENGAN counter_table_screen.dart
+          processData.forEach((key, value) {
+            if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && 
+                key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
+              final timeKey = key;
+              final mappedTime = timeRangeMap[timeKey];
+              
+              if (mappedTime != null) {
+                int slotTotal = 0;
+                for (int i = 1; i <= maxLines; i++) {
+                  final dynamic countValue = value['$i'];
+                  final int count = countValue is num 
+                      ? countValue.toInt() 
+                      : int.tryParse(countValue.toString()) ?? 0;
+                  slotTotal += count;
+                  
+                  // Tambahkan ke data per line
+                  process["${mappedTime}_$i"] = (process["${mappedTime}_$i"] as int) + count;
+                }
+                cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
+              }
+            }
+          });
+        }
+
+        // Hitung cumulative akhir - SAMA PERSIS DENGAN counter_table_screen.dart
         Map<String, int> finalCumulative = {};
         int currentCumulative = 0;
         
         for (String time in timeSlots) {
           currentCumulative += (cumulativeData[time] ?? 0);
           finalCumulative[time] = currentCumulative;
-          processMap["${time}_cumulative"] = currentCumulative;
+          process["${time}_cumulative"] = currentCumulative;
         }
 
-        for (final time in timeSlots) {
-          for (int i = 1; i <= maxLines; i++) {
-            processMap["${time}_$i"] = 0;
-          }
+        // Hapus raw data yang sudah tidak diperlukan
+        for (final contract in contractNames) {
+          final rawDataKey = "raw_data_$contract";
+          process.remove(rawDataKey);
         }
-
-        processData.forEach((key, value) {
-          if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
-            final timeKey = key;
-            final mappedTime = timeRangeMap[timeKey];
-            
-            if (mappedTime != null) {
-              for (int i = 1; i <= maxLines; i++) {
-                final dynamic countValue = value['$i'];
-                final int count = countValue is num 
-                    ? countValue.toInt() 
-                    : int.tryParse(countValue.toString()) ?? 0;
-                processMap["${mappedTime}_$i"] = (processMap["${mappedTime}_$i"] as int) + count;
-              }
-            }
-          }
-        });
-
-        processList.add(processMap);
       }
 
+      // Konversi map ke list
+      List<Map<String, dynamic>> processList = mergedData.values.toList();
+
+      // Urutkan data - SAMA PERSIS DENGAN counter_table_screen.dart
       if (type == 'Part') {
         processList.sort((a, b) {
           final aIndex = partProcessOrder.indexOf(a['process_name']);
@@ -584,9 +749,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         processList.sort((a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
       }
 
+      print('Successfully merged $type data: ${processList.length} processes');
       return processList;
     } catch (e) {
-      print('Error fetching $type counter data for contract $selectedContract: $e');
+      print('Error fetching $type counter data: $e');
       return [];
     }
   }
@@ -656,48 +822,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         enableColumnDrag: false,
         enableDropToResize: false,
         enableContextMenu: false,
-        enableEditingMode: isEditableNow,
+        enableEditingMode: false,
         enableSorting: false,
-        applyFormatterInEditing: true,
-        formatter: (value) {
-          if (value == null) return '0';
-          final strValue = value is String ? value : value.toString();
-          final numericOnly = strValue.replaceAll(RegExp(r'[^0-9]'), '');
-          return numericOnly.isEmpty ? '0' : numericOnly;
-        },
         renderer: (rendererContext) {
-          if (rendererContext.stateManager.isEditing && 
-              rendererContext.stateManager.currentCell == rendererContext.cell) {
-            return Padding(
-              padding: EdgeInsets.all(2),
-              child: TextField(
-                controller: TextEditingController(
-                  text: rendererContext.cell.value.toString()
-                ),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 8),
-                ),
-                onChanged: (value) {
-                  final intValue = int.tryParse(value) ?? 0;
-                  rendererContext.stateManager.changeCellValue(
-                    rendererContext.cell,
-                    intValue,
-                    notify: false,
-                  );
-                },
-                onEditingComplete: () {
-                  if (mounted) setState(() {});
-                  rendererContext.stateManager.notifyListeners();
-                },
-              ),
-            );
-          }
           return Container(
             padding: EdgeInsets.symmetric(horizontal: 8),
             alignment: Alignment.center,
@@ -725,7 +852,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           enableContextMenu: false,
           enableDropToResize: false,
           enableSorting: false,
-          enableEditingMode: isEditableNow,
+          enableEditingMode: false,
           cellPadding: EdgeInsets.zero,
           renderer: (rendererContext) {
             final value = rendererContext.cell.value as int;
@@ -754,78 +881,16 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         enableContextMenu: false,
         enableDropToResize: false,
         enableSorting: false,
-        enableEditingMode: isEditableNow,
+        enableEditingMode: false,
         cellPadding: EdgeInsets.zero,
         renderer: (rendererContext) {
           final part1 = rendererContext.cell.value?.toString() ?? '';
           final part2 = rendererContext.row.cells['part_2']?.value?.toString() ?? '';
           final targetPerJam = hourlyTargets.isNotEmpty ? (hourlyTargets.values.first * 2) : 0;
-          // Saat edit: tampilkan gabungan part1,part2 di semua baris
-          if (rendererContext.stateManager.isEditing && rendererContext.stateManager.currentCell == rendererContext.cell) {
-            String part1 = rendererContext.cell.value?.toString() ?? '';
-            String part2 = rendererContext.row.cells['part_2']?.value?.toString() ?? '';
-            String combined = part1.contains(',') ? part1 : (part2.isNotEmpty ? '$part1,$part2' : part1);
-            final controller = TextEditingController(text: combined);
-            return Container(
-              height: 30,
-              child: Padding(
-                padding: EdgeInsets.all(2),
-                child: TextField(
-                  controller: controller,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12),
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    isDense: true,
-                    hintText: 'part1,part2',
-                  ),
-                  onChanged: (value) {
-                    rendererContext.stateManager.changeCellValue(
-                      rendererContext.cell,
-                      value,
-                      notify: false,
-                    );
-                  },
-                  onSubmitted: (value) {
-                    if (value.trim().isEmpty) {
-                      rendererContext.stateManager.changeCellValue(
-                        rendererContext.cell,
-                        '',
-                        notify: false,
-                      );
-                      rendererContext.stateManager.changeCellValue(
-                        rendererContext.row.cells['part_2']!,
-                        '',
-                        notify: false,
-                      );
-                    } else {
-                      final values = value.split(',');
-                      final p1 = values.isNotEmpty ? values[0].trim() : '';
-                      final p2 = values.length > 1 ? values[1].trim() : '';
-                      rendererContext.stateManager.changeCellValue(
-                        rendererContext.cell,
-                        p1,
-                        notify: false,
-                      );
-                      rendererContext.stateManager.changeCellValue(
-                        rendererContext.row.cells['part_2']!,
-                        p2,
-                        notify: false,
-                      );
-                    }
-                    rendererContext.stateManager.notifyListeners();
-                    if (mounted) setState(() {});
-                  },
-                ),
-              ),
-            );
-          }
-          // Tampilan normal dengan warna berdasarkan target
+          
           if (part2.isNotEmpty) {
             final part1Value = int.tryParse(part1) ?? 0;
             final part2Value = int.tryParse(part2) ?? 0;
-            // Jika tidak ada data, warna tetap biru
             final color1 = part1.isEmpty || part1Value == 0 
                 ? Colors.blue.shade50 
                 : (part1Value >= targetPerJam ? Colors.green.shade200 : Colors.red.shade200);
@@ -836,7 +901,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               height: 30,
               decoration: BoxDecoration(
                 border: Border(
-                  right: BorderSide(color: Colors.blue.shade800, width: 1), // border kanan untuk part
+                  right: BorderSide(color: Colors.blue.shade800, width: 1),
                 ),
               ),
               child: Row(
@@ -867,7 +932,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             );
           } else {
             final part1Value = int.tryParse(part1) ?? 0;
-            // Jika tidak ada data, warna tetap biru
             final color1 = part1.isEmpty || part1Value == 0 
                 ? Colors.blue.shade50 
                 : (part1Value >= targetPerJam ? Colors.green.shade200 : Colors.red.shade200);
@@ -877,7 +941,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               decoration: BoxDecoration(
                 color: color1,
                 border: Border(
-                  right: BorderSide(color: Colors.blue.shade800, width: 1), // border kanan untuk part
+                  right: BorderSide(color: Colors.blue.shade800, width: 1),
                 ),
               ),
               child: Text(part1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -931,7 +995,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       ),
     ];
 
-  for (final time in visibleTimeSlots) {
+    for (final time in visibleTimeSlots) {
       for (int i = 1; i <= 5; i++) {
         kumitateColumns.add(PlutoColumn(
           title: "$i",
@@ -965,7 +1029,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         ));
       }
 
-      // Tambah kolom PART (readonly, hasil perhitungan)
       kumitateColumns.add(PlutoColumn(
         title: "PART",
         field: "${time}_part_calc",
@@ -1002,7 +1065,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             final parts = value.split(',');
             final part1 = int.tryParse(parts[0].trim()) ?? 0;
             final part2 = parts.length > 1 ? int.tryParse(parts[1].trim()) ?? 0 : 0;
-            // Jika tidak ada data, warna tetap biru
             final color1 = parts[0].trim().isEmpty || part1 == 0 
                 ? Colors.blue.shade50 
                 : (part1 >= partTarget ? Colors.green.shade200 : Colors.red.shade200);
@@ -1040,7 +1102,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             );
           } else {
             final part1 = int.tryParse(value) ?? 0;
-            // Jika tidak ada data, warna tetap biru
             final color1 = value.isEmpty || part1 == 0 
                 ? Colors.blue.shade50 
                 : (part1 >= partTarget ? Colors.green.shade200 : Colors.red.shade200);
@@ -1151,12 +1212,11 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         ),
       );
 
-      // Modified Stock column for each time slot with color coding
       kumitateColumns.add(
         PlutoColumn(
           title: "Stock",
           field: "${time}_stock",
-          type: PlutoColumnType.number(),
+          type: PlutoColumnType.text(),
           width: 80,
           titleTextAlign: PlutoColumnTextAlign.center,
           textAlign: PlutoColumnTextAlign.center,
@@ -1168,15 +1228,19 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           enableEditingMode: false,
           cellPadding: EdgeInsets.zero,
           renderer: (rendererContext) {
-            final stock = rendererContext.cell.value as int;
-            Color textColor;
+            final stockValue = rendererContext.cell.value;
+            Color textColor = Colors.black;
             
-            if (stock < 0) {
-              textColor = Colors.red;
-            } else if (stock >= 0 && stock <= 5) {
-              textColor = Colors.orange;
-            } else {
-              textColor = Colors.green;
+            if (stockValue is String && stockValue == '-') {
+              textColor = Colors.black;
+            } else if (stockValue is int) {
+              if (stockValue < 0) {
+                textColor = Colors.red;
+              } else if (stockValue >= 0 && stockValue <= 5) {
+                textColor = Colors.orange;
+              } else {
+                textColor = Colors.green;
+              }
             }
             
             return Container(
@@ -1190,7 +1254,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               ),
               child: Center(
                 child: Text(
-                  stock.toString(),
+                  stockValue.toString(),
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -1203,13 +1267,11 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         ),
       );
 
-      // Hitung target akumulatif
       double cumulativeTarget = 0.0;
       for (var slot in timeSlots) {
         cumulativeTarget += (hourlyTargets[slot] ?? 0.0);
         if (slot == time) break;
       }
-      // Waktu mulai dari tengah, lalu spasi panjang, lalu target di ujung kanan
       String groupTitle = ''.padLeft(60) + time + ''.padRight(40) + 'Target: ${cumulativeTarget.round()}';
       kumitateColumnGroups.add(
         PlutoColumnGroup(
@@ -1271,8 +1333,17 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     );
 
     kumitateRows = [];
-    // Filter: hanya tampilkan process dengan sequence != 0
     final filteredKumitateData = kumitateData.where((e) => (e['sequence'] ?? 0) != 0).toList();
+    
+    // Urutkan berdasarkan urutan proses
+    filteredKumitateData.sort((a, b) {
+      final aIndex = kumitateProcessOrder.indexOf(a['process_name'] ?? '');
+      final bIndex = kumitateProcessOrder.indexOf(b['process_name'] ?? '');
+      if (aIndex == -1) return 1;
+      if (bIndex == -1) return -1;
+      return aIndex.compareTo(bIndex);
+    });
+    
     if (filteredKumitateData.isNotEmpty) {
       for (int i = 0; i < filteredKumitateData.length; i++) {
         final entry = filteredKumitateData[i];
@@ -1303,7 +1374,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
         int grandTotal = 0;
 
-        for (final time in timeSlots) {
+        for (final time in visibleTimeSlots) {
           int timeSlotTotal = 0;
 
           for (int i2 = 1; i2 <= 5; i2++) {
@@ -1312,9 +1383,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             cells["${time}_$i2"] = PlutoCell(value: count);
           }
 
-          // PART CALCULATION (readonly, sesuai rumus, hanya jika part di stock pagi ada)
+          // PART CALCULATION
           String partCalc = '';
-          // Helper: cari proses OUT terkait di partData
           int getPartOutAccum(String outName) {
             final out = partData.firstWhere(
               (e) => (e['process_name'] ?? '').toString().toLowerCase() == outName.toLowerCase(),
@@ -1322,7 +1392,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             );
             int cumulativeValue = (out["${time}_cumulative"] as int?) ?? 0;
             
-            // Jika proses adalah Sode atau Cuff, bagi nilai cumulative dengan 2
             if (dividedByTwoProcesses.contains(outName)) {
               cumulativeValue = (cumulativeValue / 2).floor();
             }
@@ -1369,19 +1438,47 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           cells["${time}_cumulative"] = PlutoCell(value: entry["${time}_cumulative"] ?? 0);
           
           // Calculate stock for each time slot
-          if (i == 0) {
-            // First row (process) always has 0 stock
-            cells["${time}_stock"] = PlutoCell(value: 0);
+          bool hasDataInThisTimeSlot = false;
+          for (int line = 1; line <= 5; line++) {
+            if ((entry["${time}_$line"] ?? 0) > 0) {
+              hasDataInThisTimeSlot = true;
+              break;
+            }
+          }
+          
+          if (!hasDataInThisTimeSlot) {
+            cells["${time}_stock"] = PlutoCell(value: '-');
           } else {
-            // For other rows: stock = stock_pagi_stock + previous process cumulative - current process cumulative
-            final previousProcess = filteredKumitateData[i-1];
-            final previousCumulative = previousProcess["${time}_cumulative"] ?? 0;
-            final currentCumulative = entry["${time}_cumulative"] ?? 0;
-            // stock_pagi_stock = stock_pagi_1 + ... + stock_pagi_5
-            final pagiStock = (cells['stock_pagi_1']?.value ?? 0) + (cells['stock_pagi_2']?.value ?? 0) + (cells['stock_pagi_3']?.value ?? 0) + (cells['stock_pagi_4']?.value ?? 0) + (cells['stock_pagi_5']?.value ?? 0);
-            cells["stock_pagi_stock"] = PlutoCell(value: pagiStock);
-            final stockValue = pagiStock + previousCumulative - currentCumulative;
-            cells["${time}_stock"] = PlutoCell(value: stockValue);
+            if (i == 0) {
+              cells["${time}_stock"] = PlutoCell(value: 0);
+            } else {
+              int previousCumulative = 0;
+              for (int j = i - 1; j >= 0; j--) {
+                final previousProcess = filteredKumitateData[j];
+                bool hasPreviousData = false;
+                for (int line = 1; line <= 5; line++) {
+                  if ((previousProcess["${time}_$line"] ?? 0) > 0) {
+                    hasPreviousData = true;
+                    break;
+                  }
+                }
+                
+                if (hasPreviousData) {
+                  previousCumulative = previousProcess["${time}_cumulative"] ?? 0;
+                  break;
+                }
+              }
+              
+              final currentCumulative = entry["${time}_cumulative"] ?? 0;
+              final pagiStock = (cells['stock_pagi_1']?.value ?? 0) + 
+                              (cells['stock_pagi_2']?.value ?? 0) + 
+                              (cells['stock_pagi_3']?.value ?? 0) + 
+                              (cells['stock_pagi_4']?.value ?? 0) + 
+                              (cells['stock_pagi_5']?.value ?? 0);
+              cells["stock_pagi_stock"] = PlutoCell(value: pagiStock);
+              final stockValue = pagiStock + previousCumulative - currentCumulative;
+              cells["${time}_stock"] = PlutoCell(value: stockValue);
+            }
           }
         }
 
@@ -1404,6 +1501,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           );
         })(),
     ];
+    
     partColumns = [
       PlutoColumn(
         title: "PROCESS",
@@ -1516,48 +1614,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         enableColumnDrag: false,
         enableContextMenu: false,
         enableDropToResize: false,
-        enableEditingMode: true,
+        enableEditingMode: false,
         enableSorting: false,
-        applyFormatterInEditing: true,
-        formatter: (value) {
-          if (value == null) return '0';
-          final strValue = value is String ? value : value.toString();
-          final numericOnly = strValue.replaceAll(RegExp(r'[^0-9]'), '');
-          return numericOnly.isEmpty ? '0' : numericOnly;
-        },
         renderer: (rendererContext) {
-          if (rendererContext.stateManager.isEditing && 
-              rendererContext.stateManager.currentCell == rendererContext.cell) {
-            return Padding(
-              padding: EdgeInsets.all(2),
-              child: TextField(
-                controller: TextEditingController(
-                  text: rendererContext.cell.value.toString()
-                ),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 8),
-                ),
-                onChanged: (value) {
-                  final intValue = int.tryParse(value) ?? 0;
-                  rendererContext.stateManager.changeCellValue(
-                    rendererContext.cell,
-                    intValue,
-                    notify: false,
-                  );
-                },
-                onEditingComplete: () {
-                  if (mounted) setState(() {});
-                  rendererContext.stateManager.notifyListeners();
-                },
-              ),
-            );
-          }
           return Container(
             padding: EdgeInsets.symmetric(horizontal: 8),
             child: Center(
@@ -1578,17 +1637,16 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     
     if (partData.isNotEmpty) {
       for (final entry in partData) {
-        final cells = <String, PlutoCell>{
-          "process_name": PlutoCell(value: entry["process_name"]),
-          "type": PlutoCell(value: "Part"),
-          "belumKensa": PlutoCell(
-            value: entry["belumKensa"] is String 
-                ? int.tryParse(entry["belumKensa"] as String) ?? 0
-                : (entry["belumKensa"] as num?)?.toInt() ?? 0,
-          ),
-        };
+        final cells = <String, PlutoCell>{};
+        cells["process_name"] = PlutoCell(value: entry["process_name"]);
+        cells["type"] = PlutoCell(value: "Part");
+        cells["belumKensa"] = PlutoCell(
+          value: entry["belumKensa"] is String 
+              ? int.tryParse(entry["belumKensa"] as String) ?? 0
+              : (entry["belumKensa"] as num?)?.toInt() ?? 0,
+        );
 
-      for (final time in visibleTimeSlots) {
+        for (final time in visibleTimeSlots) {
           for (int i = 1; i <= 3; i++) {
             entry["${time}_$i"] = (entry["${time}_$i"] as num?)?.toInt() ?? 0;
           }
@@ -1616,11 +1674,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       noDataAvailable = false;
     });
     
-    print('Loading data for Line $selectedLine, Contract $selectedContract on ${DateFormat('yyyy-MM-dd').format(selectedDate)}');
+    print('Loading ALL data for Line $selectedLine on ${DateFormat('yyyy-MM-dd').format(selectedDate)}');
 
-    // Load contract names first
-    await _loadContractNames();
-    
     final formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
     
     try {
@@ -1654,10 +1709,11 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         _buildKumitateColumnsAndRows();
         _buildPartColumnsAndRows();
         _buildProsesTable();
-        print('Data loaded successfully: ${kumitateData.length} kumitate, ${partData.length} part');
+        print('ALL Data loaded successfully: ${kumitateData.length} kumitate, ${partData.length} part');
+        print('Visible timeslots: $visibleTimeSlots');
       }
     } catch (e) {
-      print('Error loading data: $e');
+      print('Error loading ALL data: $e');
       setState(() {
         noDataAvailable = true;
         kumitateData = [];
@@ -1668,62 +1724,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     }
   }
 
-  Future<void> _loadContractNames() async {
-    try {
-      final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
-      final docRef = FirebaseFirestore.instance
-          .collection('counter_sistem')
-          .doc(dateStr)
-          .collection(selectedLine)
-          .doc('Kumitate');
-
-      final doc = await docRef.get();
-      
-      if (doc.exists && doc.data() != null) {
-        final data = doc.data()!;
-        
-        // Ambil array dari field "Kontrak"
-        final kontrakArray = data['Kontrak'] as List<dynamic>?;
-        
-        if (kontrakArray != null && kontrakArray.isNotEmpty) {
-          // Convert to List<String> and filter out null/empty values
-          final contracts = kontrakArray
-              .where((item) => item != null && item.toString().isNotEmpty)
-              .map((item) => item.toString())
-              .toList();
-          
-          setState(() {
-            contractNames = contracts.isNotEmpty ? contracts : ["Process"];
-            if (!contractNames.contains(selectedContract)) {
-              selectedContract = contractNames.first;
-            }
-          });
-          print('Loaded contracts: $contractNames');
-        } else {
-          // Fallback jika field Kontrak tidak ada atau kosong
-          setState(() {
-            contractNames = ["Process"];
-            selectedContract = "Process";
-          });
-          print('No Kontrak field found, using default');
-        }
-      } else {
-        // Document tidak ada
-        setState(() {
-          contractNames = ["Process"];
-          selectedContract = "Process";
-        });
-        print('Kumitate document not found');
-      }
-    } catch (e) {
-      print('Error loading contract names: $e');
-      setState(() {
-        contractNames = ["Process"];
-        selectedContract = "Process";
-      });
-    }
-  }
-
   Widget buildChart(String processName, String type) {
     final dataList = type == 'Kumitate' ? kumitateData : partData;
     final process = dataList.firstWhere((e) => e["process_name"] == processName);
@@ -1731,12 +1731,11 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       Colors.red, Colors.green, Colors.blue, Colors.orange, Colors.purple,
     ];
 
-  final extendedTimeSlots = ["0", ...timeSlots];
+    final extendedTimeSlots = ["0", ...timeSlots];
   final maxLines = type == 'Part' ? 3 : 5;
 
     final lineBarsData = <LineChartBarData>[];
     if (type == 'Kumitate' || type == 'Part') {
-      // Untuk Kumitate dan Part, tampilkan data per nomor line saja (bukan akumulatif)
       for (int lineNum = 1; lineNum <= maxLines; lineNum++) {
         bool hasData = false;
         final spots = <FlSpot>[FlSpot(0, 0)];
@@ -1783,12 +1782,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               runSpacing: 4.0,
               children: [
                 ...List.generate(lineBarsData.length, (index) {
-                  final colors = [
-                    ...lineColors
-                  ];
-                  final labels = [
-                    'Line 1', 'Line 2', 'Line 3', 'Line 4', 'Line 5'
-                  ];
+                  final colors = [...lineColors];
+                  final labels = ['Line 1', 'Line 2', 'Line 3', 'Line 4', 'Line 5'];
                   return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1923,7 +1918,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           excel.TextCellValue('Kumitate'),
           excel.TextCellValue(row.cells['process_name']!.value.toString()),
           ...timeSlots.map((time) => excel.IntCellValue(row.cells['${time}_cumulative']!.value as int)),
-          excel.IntCellValue(0), // Stock sebelum kensa
+          excel.IntCellValue(0),
           excel.IntCellValue(row.cells['stock_20min']!.value as int),
           excel.IntCellValue(row.cells['stock_pagi_1']!.value as int),
           excel.IntCellValue(row.cells['stock_pagi_2']!.value as int),
@@ -1948,14 +1943,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             return excel.IntCellValue(value);
           }),
           excel.IntCellValue(row.cells['belumKensa']!.value as int),
-          excel.IntCellValue(0), // Stock 20 menit
-          excel.IntCellValue(0), // Stock Pagi 1
-          excel.IntCellValue(0), // Stock Pagi 2
-          excel.IntCellValue(0), // Stock Pagi 3
-          excel.IntCellValue(0), // Stock Pagi 4
-          excel.TextCellValue(''), // PART 1
-          excel.TextCellValue(''), // PART 2
-          excel.IntCellValue(0), // Stock
+          excel.IntCellValue(0),
+          excel.IntCellValue(0),
+          excel.IntCellValue(0),
+          excel.IntCellValue(0),
+          excel.IntCellValue(0),
+          excel.TextCellValue(''),
+          excel.TextCellValue(''),
+          excel.IntCellValue(0),
         ]);
       }
 
@@ -1986,141 +1981,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     }
   }
 
-  Future<void> _saveToFirebase() async {
-    setState(() => isSaving = true);
-    try {
-      final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
-      final batch = FirebaseFirestore.instance.batch();
-      
-      // Save Part belumKensa
-      for (final row in partRows) {
-        final processName = row.cells['process_name']!.value.toString().replaceAll(' ', '_');
-        final docRef = FirebaseFirestore.instance
-            .collection('counter_sistem')
-            .doc(dateStr)
-            .collection(selectedLine)
-            .doc('Part')
-            .collection(selectedContract) // Ganti 'Process' dengan selectedContract
-            .doc(processName);
-            
-        int belumKensa = 0;
-        final cellValue = row.cells['belumKensa']?.value;
-        
-        if (cellValue is int) {
-          belumKensa = cellValue;
-        } else if (cellValue is String) {
-          belumKensa = int.tryParse(cellValue) ?? 0;
-        } else if (cellValue is num) {
-          belumKensa = cellValue.toInt();
-        }
-        
-        final updateData = {
-          'belumKensa': belumKensa,
-        };
-        
-        batch.update(docRef, updateData);
-      }
-      
-      // Save Kumitate stock 20 menit, stock pagi, dan PART
-      for (final row in kumitateRows) {
-        final processName = row.cells['process_name']!.value.toString().replaceAll(' ', '_');
-        final docRef = FirebaseFirestore.instance
-            .collection('counter_sistem')
-            .doc(dateStr)
-            .collection(selectedLine)
-            .doc('Kumitate')
-            .collection(selectedContract) // Ganti 'Process' dengan selectedContract
-            .doc(processName);
-
-        int stock20min = 0;
-        final cellValue = row.cells['stock_20min']?.value;
-        if (cellValue is int) {
-          stock20min = cellValue;
-        } else if (cellValue is String) {
-          stock20min = int.tryParse(cellValue) ?? 0;
-        } else if (cellValue is num) {
-          stock20min = cellValue.toInt();
-        }
-
-        // Get stock pagi values
-        final stockPagi = {
-          '1': row.cells['stock_pagi_1']?.value as int? ?? 0,
-          '2': row.cells['stock_pagi_2']?.value as int? ?? 0,
-          '3': row.cells['stock_pagi_3']?.value as int? ?? 0,
-          '4': row.cells['stock_pagi_4']?.value as int? ?? 0,
-          'stock': (row.cells['stock_pagi_1']?.value as int? ?? 0) +
-                  (row.cells['stock_pagi_2']?.value as int? ?? 0) +
-                  (row.cells['stock_pagi_3']?.value as int? ?? 0) +
-                  (row.cells['stock_pagi_4']?.value as int? ?? 0),
-        };
-
-        // PART: logika split part1,part2 berlaku untuk semua baris
-        String partValue = row.cells['part']?.value as String? ?? '';
-        String partValue2 = row.cells['part_2']?.value as String? ?? '';
-        if (partValue.contains(',')) {
-          final values = partValue.split(',');
-          partValue = values.isNotEmpty ? values[0].trim() : '';
-          partValue2 = values.length > 1 ? values[1].trim() : '';
-        }
-
-        final updateData = {
-          'stock_20min': stock20min,
-          'stock_pagi': stockPagi,
-          'part': {
-            'part1': partValue,
-            'part2': partValue2,
-          },
-        };
-        batch.update(docRef, updateData);
-      }
-      
-      await batch.commit();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Data berhasil disimpan!')),
-        );
-      }
-    } catch (e) {
-      print('Error saving data: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menyimpan data: $e')),
-        );
-      }
-    } finally {
-      await loadData();
-      await _loadTargets();
-      setState(() => isSaving = false);
-    }
-  }
-
-  Future<void> selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: selectedDate,
-      firstDate: DateTime(2023),
-      lastDate: DateTime.now().add(Duration(days: 1)),
-    );
-
-    if (picked != null && picked != selectedDate) {
-      setState(() {
-        selectedDate = picked;
-        isLoading = true;
-        isTargetLoading = true;
-      });
-      await loadData();
-      await _loadTargets();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.blue.shade100,
       appBar: AppBar(
         title: Text(
-          "Stock Kumitate & Part per Process",
+          "Stock Kumitate & Part per Process (All Contracts)",
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
@@ -2141,11 +2008,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         elevation: 4,
         actions: [
           IconButton(
-            icon: Icon(Icons.save, color: Colors.white),
-            onPressed: isSaving ? null : _saveToFirebase,
-            tooltip: "Save Data",
-          ),
-          IconButton(
             icon: Icon(Icons.file_download, color: Colors.white),
             tooltip: "Export to Excel",
             onPressed: exportToExcel,
@@ -2160,7 +2022,6 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               });
               loadData();
               _loadTargets();
-              _loadContractNames();
             },
           ),
           SizedBox(width: 16),
@@ -2183,7 +2044,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                       ),
                       SizedBox(height: 16),
                       Text(
-                        'Anda dapat memilih tanggal lain atau memilih line berbeda untuk melihat data.',
+                        'You can either pick another date or choose a different line to view data.',
                         style: TextStyle(fontSize: 14, color: Colors.black54),
                         textAlign: TextAlign.center,
                       ),
@@ -2221,10 +2082,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                                     isTargetLoading = true;
                                     noDataAvailable = false;
                                   });
-                                  _loadContractNames().then((_) {
-                                    loadData();
-                                    _loadTargets();
-                                  });
+                                  loadData();
+                                  _loadTargets();
                                 },
                               ),
                             ),
@@ -2237,161 +2096,97 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               : SingleChildScrollView(
                   child: Column(
                     children: [
-                      // Container untuk seluruh control bar
-                      Container(
+                      Padding(
                         padding: const EdgeInsets.all(8.0),
-                        child: Stack(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            // Bagian Kiri: Line dan Process
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  // Dropdown Line
-                                  Container(
-                                    width: 120,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: Colors.blue.shade500, width: 1),
-                                    ),
-                                    padding: EdgeInsets.symmetric(horizontal: 8),
-                                    child: DropdownButtonHideUnderline(
-                                      child: DropdownButton<String>(
-                                        isExpanded: true,
-                                        value: selectedLine,
-                                        items: ["A", "B", "C", "D", "E"]
-                                            .map((line) => DropdownMenuItem(
-                                                  value: line,
-                                                  child: Center(
-                                                    child: Text(
-                                                      "Line $line",
-                                                      style: TextStyle(fontSize: 14),
-                                                      textAlign: TextAlign.center,
-                                                    ),
-                                                  ),
-                                                ))
-                                            .toList(),
-                                        onChanged: (value) {
-                                          if (value != null) {
-                                            setState(() {
-                                              selectedLine = value;
-                                              isLoading = true;
-                                              isTargetLoading = true;
-                                            });
-                                            _loadContractNames().then((_) {
-                                              loadData();
-                                              _loadTargets();
-                                            });
-                                          }
-                                        },
-                                        icon: Icon(Icons.arrow_drop_down, size: 20, color: Colors.blue.shade600),
-                                        style: TextStyle(color: Colors.black),
-                                        dropdownColor: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(width: 10),
-                                  // Dropdown Contract (Process) - Diubah border menjadi biru
-                                  Container(
-                                    width: 150,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: Colors.blue.shade500, width: 1), // Diubah dari hijau ke biru
-                                    ),
-                                    padding: EdgeInsets.symmetric(horizontal: 8),
-                                    child: DropdownButtonHideUnderline(
-                                      child: DropdownButton<String>(
-                                        isExpanded: true,
-                                        value: selectedContract,
-                                        items: contractNames
-                                            .map((contract) => DropdownMenuItem(
-                                                  value: contract,
-                                                  child: Center(
-                                                    child: Text(
-                                                      contract,
-                                                      style: TextStyle(fontSize: 14),
-                                                      textAlign: TextAlign.center,
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                ))
-                                            .toList(),
-                                        onChanged: (value) {
-                                          if (value != null) {
-                                            setState(() {
-                                              selectedContract = value;
-                                              isLoading = true;
-                                            });
-                                            loadData();
-                                          }
-                                        },
-                                        icon: Icon(Icons.arrow_drop_down, size: 20, color: Colors.blue.shade600), // Diubah dari hijau ke biru
-                                        style: TextStyle(color: Colors.black),
-                                        dropdownColor: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                            Container(
+                              width: 120,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.blue.shade500, width: 1),
                               ),
-                            ),
-                            
-                            // Bagian Tengah: Target (tepat di tengah halaman)
-                            Align(
-                              alignment: Alignment.center,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.shade100,
-                                  borderRadius: BorderRadius.circular(4),
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  isExpanded: true,
+                                  value: selectedLine,
+                                  items: ["A", "B", "C", "D", "E"]
+                                      .map((line) => DropdownMenuItem(
+                                            value: line,
+                                            child: Center(
+                                              child: Text(
+                                                "Line $line",
+                                                style: TextStyle(fontSize: 14),
+                                                textAlign: TextAlign.center,
+                                              ),
+                                            ),
+                                          ))
+                                      .toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      selectedLine = value!;
+                                      isLoading = true;
+                                      isTargetLoading = true;
+                                    });
+                                    loadData();
+                                    _loadTargets();
+                                  },
+                                  icon: Icon(Icons.arrow_drop_down, size: 20, color: Colors.blue.shade600),
+                                  style: TextStyle(color: Colors.black),
+                                  dropdownColor: Colors.white,
                                 ),
-                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                child: isTargetLoading
-                                    ? Center(
-                                        child: SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        ),
-                                      )
-                                    : Text(
-                                        'Target: ${dailyTarget != null ? dailyTarget!.round() : '-'}',
-                                        style: TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black,
-                                        ),
-                                      ),
                               ),
                             ),
                             
-                            // Bagian Kanan: Date Picker
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: Container(
-                                width: 140,
-                                child: TextButton(
-                                  style: TextButton.styleFrom(
-                                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                    backgroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4),
-                                      side: BorderSide(color: Colors.blue.shade500, width: 1),
-                                    ),
-                                  ),
-                                  onPressed: () => selectDate(context),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.calendar_today, size: 18, color: Colors.blue.shade600),
-                                      SizedBox(width: 6),
-                                      Text(
-                                        DateFormat("yyyy-MM-dd").format(selectedDate),
-                                        style: TextStyle(fontSize: 14, color: Colors.black),
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: isTargetLoading
+                                  ? Center(
+                                      child: SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
                                       ),
-                                    ],
+                                    )
+                                  : Text(
+                                      'Target: ${dailyTarget != null ? dailyTarget!.round() : '-'}',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black,
+                                      ),
+                                    ),
+                            ),
+                            
+                            Container(
+                              width: 140,
+                              child: TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  backgroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                    side: BorderSide(color: Colors.blue.shade500, width: 1),
                                   ),
+                                ),
+                                onPressed: () => selectDate(context),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.calendar_today, size: 18, color: Colors.blue.shade600),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      DateFormat("yyyy-MM-dd").format(selectedDate),
+                                      style: TextStyle(fontSize: 14, color: Colors.black),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -2399,11 +2194,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                         ),
                       ),
                       
-                      // HAPUS: Container yang menampilkan info Kontrak dan Line (dihapus sesuai permintaan)
-                      
                       if (kumitateRows.isNotEmpty) ...[
                         _buildTableWidget(
-                          title: 'KUMITATE',
+                          title: 'KUMITATE (All Contracts)',
                           columns: kumitateColumns,
                           rows: kumitateRows,
                           columnGroups: kumitateColumnGroups,
@@ -2413,7 +2206,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                       
                       if (partRows.isNotEmpty) ...[
                         _buildTableWidget(
-                          title: 'PART',
+                          title: 'PART (All Contracts)',
                           columns: partColumns,
                           rows: partRows,
                           columnGroups: partColumnGroups,
@@ -2458,6 +2251,25 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     );
   }
 
+  Future<void> selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2023),
+      lastDate: DateTime.now().add(Duration(days: 1)),
+    );
+
+    if (picked != null && picked != selectedDate) {
+      setState(() {
+        selectedDate = picked;
+        isLoading = true;
+        isTargetLoading = true;
+      });
+      await loadData();
+      await _loadTargets();
+    }
+  }
+
   Widget _buildTableWidget({
     required String title,
     required List<PlutoColumn> columns,
@@ -2465,15 +2277,13 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     required List<PlutoColumnGroup> columnGroups,
     Widget? processDropdown,
   }) {
-  const rowHeight = 30.0;
-  const headerHeight = 40.0;
-  const columnHeaderHeight = 30.0;
-  // Hitung tinggi tabel dinamis sesuai jumlah baris
-  // Tinggi tabel otomatis sesuai jumlah baris
-  final totalHeight = headerHeight + columnHeaderHeight + (rows.length * rowHeight) + 6;
+    const rowHeight = 30.0;
+    const headerHeight = 40.0;
+    const columnHeaderHeight = 30.0;
+    final totalHeight = headerHeight + columnHeaderHeight + (rows.length * rowHeight) + 6;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0), // hilangkan padding vertikal
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -2534,7 +2344,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                 borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
               ),
               child: PlutoGrid(
-                key: ValueKey('${title}_${selectedDate}_${selectedLine}_${selectedContract}_${title == 'AKUMULATIF LINE' ? (selectedProcessName ?? '') : ''}'),
+                key: ValueKey('${title}_${selectedDate}_${selectedLine}_${title == 'AKUMULATIF LINE' ? (selectedProcessName ?? '') : ''}'),
                 columns: columns,
                 rows: rows,
                 columnGroups: columnGroups,
@@ -2550,73 +2360,16 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                     isAlwaysShown: true,
                     scrollbarThickness: 5,
                   ),
-                  enableMoveHorizontalInEditing: true,
-                  enterKeyAction: PlutoGridEnterKeyAction.editingAndMoveDown,
+                  enableMoveHorizontalInEditing: false,
+                  enterKeyAction: PlutoGridEnterKeyAction.none,
                 ),
-                // Pewarnaan baris khusus untuk PART
-                rowColorCallback: title == 'PART'
+                rowColorCallback: title == 'PART (All Contracts)'
                     ? (PlutoRowColorContext rowContext) {
                         final processName = rowContext.row.cells['process_name']?.value?.toString() ?? '';
                         return getPartRowColor(processName) ?? Colors.transparent;
                       }
                     : null,
-                onChanged: (PlutoGridOnChangedEvent event) {
-                  if (event.column.field == 'belumKensa' || 
-                      event.column.field == 'stock_20min' ||
-                      event.column.field == 'part' ||
-                      event.column.field == 'part_2' ||
-                      event.column.field.startsWith('stock_pagi_')) {
-                    final stateManager = title == 'PART' 
-                        ? _partStateManager 
-                        : _kumitateStateManager;
-                    
-                    if (stateManager != null) {
-                      if (event.column.field == 'part' || event.column.field == 'part_2') {
-                        stateManager.changeCellValue(
-                          event.row.cells[event.column.field]!,
-                          event.value.toString(),
-                          notify: false,
-                        );
-                      } else {
-                        final intValue = int.tryParse(event.value.toString()) ?? 0;
-                        stateManager.changeCellValue(
-                          event.row.cells[event.column.field]!,
-                          intValue,
-                          notify: false,
-                        );
-                      }
-
-                      if (event.column.field.startsWith('stock_pagi_') && !event.column.field.endsWith('stock')) {
-                        final pagi1 = event.row.cells['stock_pagi_1']?.value as int? ?? 0;
-                        final pagi2 = event.row.cells['stock_pagi_2']?.value as int? ?? 0;
-                        final pagi3 = event.row.cells['stock_pagi_3']?.value as int? ?? 0;
-                        final pagi4 = event.row.cells['stock_pagi_4']?.value as int? ?? 0;
-                        final pagiStock = pagi1 + pagi2 + pagi3 + pagi4;
-                        stateManager.changeCellValue(
-                          event.row.cells['stock_pagi_stock']!,
-                          pagiStock,
-                          notify: false,
-                        );
-                      }
-
-                      setState(() {});
-                    }
-                  }
-                },
-                onLoaded: (PlutoGridOnLoadedEvent event) {
-                  if (title == 'PART') {
-                    _partStateManager = event.stateManager;
-                  } else {
-                    _kumitateStateManager = event.stateManager;
-                  }
-                  
-                  event.stateManager.addListener(() {
-                    if (!event.stateManager.hasFocus) {
-                      setState(() {});
-                    }
-                  });
-                },
-                mode: PlutoGridMode.normal,
+                mode: PlutoGridMode.readOnly,
               ),
             ),
           ),

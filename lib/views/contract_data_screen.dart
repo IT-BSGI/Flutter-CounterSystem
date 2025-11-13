@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:dropdown_search/dropdown_search.dart';
+import 'dart:async';
 
 class ContractDataScreen extends StatefulWidget {
   @override
@@ -22,23 +23,73 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
   List<PlutoRow> rows = [];
   List<PlutoColumnGroup> columnGroups = [];
 
+  Timer? _loadDataTimer;
+
+  // Urutan proses yang ditentukan
+  final List<String> desiredProcessOrder = [
+    "Maekata JinuiFuse",
+    "Maekata Jinui",
+    "Maekata Fuse",
+    "Eri Pipping",
+    "Eri Tsuke",
+    "Overlock Eri Tsuke",
+    "Eri Fuse",
+    "Sode Tsuke Interlock",
+    "Sode Tsuke Honnui",
+    "Iron Sode Tsuke",
+    "Sode Fuse",
+    "Sode Fuse 8mm",
+    "Sode Fuse 1mm",
+    "Wakinui Interlock",
+    "Wakinui Nihonbari",
+    "Waki Honnui",
+    "Iron Waki",
+    "Waki Fuse",
+    "Cuff Tsuke",
+    "Kazari Cuff",
+    "Mitsumaki",
+    "Gazet",
+    "Kandome",
+    "Bottan Tsuke",
+    "Maemi IN", 
+    "Maemi OUT", 
+    "Ushiro IN", 
+    "Ushiro OUT",
+    "Eri IN", 
+    "Eri OUT", 
+    "Sode IN", 
+    "Sode OUT",
+    "Cuff IN", 
+    "Cuff OUT",
+  ];
+
   @override
   void initState() {
     super.initState();
     _loadMasterContracts();
   }
 
+  @override
+  void dispose() {
+    _loadDataTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadMasterContracts() async {
     setState(() => isLoadingContracts = true);
     
     try {
-      DocumentSnapshot contractsSnapshot = 
-          await FirebaseFirestore.instance.collection('basic_data').doc('contracts').get();
+      // Mengambil kontrak dari struktur baru: basic_data/data_contracts/contracts/
+      QuerySnapshot contractsSnapshot = 
+          await FirebaseFirestore.instance
+              .collection('basic_data')
+              .doc('data_contracts')
+              .collection('contracts')
+              .get();
       
-      if (contractsSnapshot.exists) {
-        Map<String, dynamic> contractsData = _convertToStringDynamicMap(contractsSnapshot.data());
+      if (contractsSnapshot.docs.isNotEmpty) {
         setState(() {
-          contractNames = contractsData.keys.where((key) => key.isNotEmpty).toList()..sort();
+          contractNames = contractsSnapshot.docs.map((doc) => doc.id).toList()..sort();
           if (contractNames.isNotEmpty && selectedContract == null) {
             selectedContract = contractNames.first;
           }
@@ -50,9 +101,30 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
       }
     } catch (e) {
       print('Error loading master contracts: $e');
-      setState(() {
-        contractNames = [];
-      });
+      // Fallback: coba ambil dari struktur lama jika struktur baru tidak ada
+      try {
+        DocumentSnapshot oldContractsSnapshot = 
+            await FirebaseFirestore.instance.collection('basic_data').doc('contracts').get();
+        
+        if (oldContractsSnapshot.exists) {
+          Map<String, dynamic> contractsData = _convertToStringDynamicMap(oldContractsSnapshot.data());
+          setState(() {
+            contractNames = contractsData.keys.where((key) => key.isNotEmpty).toList()..sort();
+            if (contractNames.isNotEmpty && selectedContract == null) {
+              selectedContract = contractNames.first;
+            }
+          });
+        } else {
+          setState(() {
+            contractNames = [];
+          });
+        }
+      } catch (fallbackError) {
+        print('Error loading fallback contracts: $fallbackError');
+        setState(() {
+          contractNames = [];
+        });
+      }
     } finally {
       setState(() => isLoadingContracts = false);
     }
@@ -65,6 +137,11 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
       return Map<String, dynamic>.from(data);
     }
     return {};
+  }
+
+  void _scheduleLoadData() {
+    _loadDataTimer?.cancel();
+    _loadDataTimer = Timer(Duration(milliseconds: 300), _loadContractData);
   }
 
   Future<void> _loadContractData() async {
@@ -95,14 +172,64 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
       // Filter hanya tanggal yang memiliki data
       final datesWithData = _getDatesWithData(dateData, datesInMonth);
       
-      // Build tabel hanya dengan tanggal yang memiliki data
-      _buildTableStructure(datesWithData, processNames, dateData);
+      // Filter dan urutkan proses berdasarkan desiredOrder dan hanya yang memiliki data
+      final filteredProcessNames = _filterAndSortProcesses(processNames, dateData, datesWithData);
+      
+      if (filteredProcessNames.isEmpty) {
+        setState(() {
+          rows = [];
+          columns = [];
+          columnGroups = [];
+        });
+        return;
+      }
+      
+      // Build tabel hanya dengan tanggal yang memiliki data dan proses yang difilter
+      _buildTableStructure(datesWithData, filteredProcessNames, dateData);
 
     } catch (e) {
       print('Error loading contract data: $e');
     } finally {
       setState(() => isLoadingData = false);
     }
+  }
+
+  List<String> _filterAndSortProcesses(
+    List<String> processNames, 
+    Map<String, Map<String, Map<String, int>>> dateData, 
+    List<DateTime> datesWithData
+  ) {
+    final processesWithData = <String>{};
+    
+    // Cek setiap proses apakah memiliki data di setidaknya satu tanggal dan line
+    for (final processName in processNames) {
+      bool hasData = false;
+      
+      for (final date in datesWithData) {
+        final dateStr = DateFormat('yyyy-MM-dd').format(date);
+        final processDateData = dateData[dateStr]?[processName];
+        
+        if (processDateData != null) {
+          for (final line in ["A", "B", "C", "D", "E"]) {
+            if ((processDateData[line] ?? 0) > 0) {
+              hasData = true;
+              break;
+            }
+          }
+        }
+        if (hasData) break;
+      }
+      
+      if (hasData) {
+        processesWithData.add(processName);
+      }
+    }
+    
+    // Urutkan berdasarkan desiredOrder dan hanya ambil yang ada di desiredOrder
+    final filteredAndSorted = desiredProcessOrder.where((process) => processesWithData.contains(process)).toList();
+    
+    print('Filtered to ${filteredAndSorted.length} processes with data');
+    return filteredAndSorted;
   }
 
   List<DateTime> _generateDatesInMonth(DateTime firstDay, DateTime lastDay) {
@@ -118,67 +245,110 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
     
     print('Searching processes in ${datesInMonth.length} dates for contract: $selectedContract');
     
-    // Cari proses di semua tanggal seperti di final_page
+    // Buat semua query sekaligus
+    final queries = <Future<QuerySnapshot>>[];
+    
     for (final date in datesInMonth) {
       final dateStr = DateFormat('yyyy-MM-dd').format(date);
       
       for (final line in ["A", "B", "C", "D", "E"]) {
         for (final type in ["Kumitate", "Part"]) {
-          try {
-            final contractRef = FirebaseFirestore.instance
-                .collection('counter_sistem')
-                .doc(dateStr)
-                .collection(line)
-                .doc(type)
-                .collection(selectedContract!);
+          final contractRef = FirebaseFirestore.instance
+              .collection('counter_sistem')
+              .doc(dateStr)
+              .collection(line)
+              .doc(type)
+              .collection(selectedContract!);
 
-            final snapshot = await contractRef.get();
-            
-            for (final doc in snapshot.docs) {
-              final processName = doc.id.replaceAll('_', ' ');
-              processNames.add(processName);
-            }
-          } catch (e) {
-            // Continue jika error
-          }
+          queries.add(contractRef.get().catchError((e) {
+            return FirebaseFirestore.instance
+                .collection('counter_sistem')
+                .doc('dummy')
+                .collection('dummy')
+                .get();
+          }));
         }
       }
     }
     
+    // Eksekusi semua query secara parallel
+    final snapshots = await Future.wait(queries);
+    
+    for (final snapshot in snapshots) {
+      for (final doc in snapshot.docs) {
+        final processName = doc.id.replaceAll('_', ' ');
+        processNames.add(processName);
+      }
+    }
+    
     print('Total ${processNames.length} processes found for contract: $selectedContract');
-    return processNames.toList()..sort();
+    return processNames.toList();
   }
 
   Future<Map<String, Map<String, Map<String, int>>>> _loadAllDateData(
       List<DateTime> dates, List<String> processNames) async {
     final allData = <String, Map<String, Map<String, int>>>{};
     
-    // Load data untuk setiap tanggal seperti di final_page
+    // Buat batch queries untuk semua tanggal
+    final dateQueries = <Future<void>>[];
+    
     for (final date in dates) {
-      final dateStr = DateFormat('yyyy-MM-dd').format(date);
-      final dateProcessData = <String, Map<String, int>>{};
-      
-      for (final processName in processNames) {
-        final processLineData = <String, int>{};
-        
-        for (final line in ["A", "B", "C", "D", "E"]) {
-          final lineTotal = await _getProcessTotalForDateAndLine(
-            dateStr, 
-            processName, 
-            line
-          );
-          
-          processLineData[line] = lineTotal;
-        }
-        
-        dateProcessData[processName] = processLineData;
-      }
-      
-      allData[dateStr] = dateProcessData;
+      dateQueries.add(_loadSingleDateData(date, processNames, allData));
     }
+    
+    // Eksekusi parallel
+    await Future.wait(dateQueries);
     
     print('Loaded data for ${allData.length} dates');
     return allData;
+  }
+
+  Future<void> _loadSingleDateData(
+      DateTime date, 
+      List<String> processNames, 
+      Map<String, Map<String, Map<String, int>>> allData) async {
+    
+    final dateStr = DateFormat('yyyy-MM-dd').format(date);
+    final dateProcessData = <String, Map<String, int>>{};
+    
+    // Buat queries untuk semua proses secara parallel
+    final processQueries = <Future<void>>[];
+    
+    for (final processName in processNames) {
+      processQueries.add(_loadProcessData(dateStr, processName, dateProcessData));
+    }
+    
+    await Future.wait(processQueries);
+    
+    // Hanya simpan jika ada data
+    if (dateProcessData.values.any((processData) => 
+        processData.values.any((value) => value > 0))) {
+      allData[dateStr] = dateProcessData;
+    }
+  }
+
+  Future<void> _loadProcessData(
+      String dateStr, 
+      String processName, 
+      Map<String, Map<String, int>> dateProcessData) async {
+    
+    final processLineData = <String, int>{};
+    final lineQueries = <Future<void>>[];
+    
+    for (final line in ["A", "B", "C", "D", "E"]) {
+      lineQueries.add(_getProcessTotalForDateAndLine(dateStr, processName, line)
+          .then((total) {
+        if (total > 0) {
+          processLineData[line] = total;
+        }
+      }));
+    }
+    
+    await Future.wait(lineQueries);
+    
+    if (processLineData.isNotEmpty) {
+      dateProcessData[processName] = processLineData;
+    }
   }
 
   List<DateTime> _getDatesWithData(
@@ -190,21 +360,7 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
       final dateStr = DateFormat('yyyy-MM-dd').format(date);
       final dateProcessData = dateData[dateStr];
       
-      // Cek apakah ada data di setidaknya satu line untuk tanggal ini
-      bool hasData = false;
-      if (dateProcessData != null) {
-        for (final processData in dateProcessData.values) {
-          for (final lineValue in processData.values) {
-            if (lineValue > 0) {
-              hasData = true;
-              break;
-            }
-          }
-          if (hasData) break;
-        }
-      }
-      
-      if (hasData) {
+      if (dateProcessData != null && dateProcessData.isNotEmpty) {
         datesWithData.add(date);
       }
     }
@@ -221,7 +377,7 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
     rows = [];
     columnGroups = [];
 
-    // Add process name column
+    // Add process name column - TINGGI PENUH tanpa grup terpisah
     columns.add(
       PlutoColumn(
         title: "PROCESS",
@@ -234,32 +390,39 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
         enableContextMenu: false,
         enableSorting: false,
         enableEditingMode: false,
+        enableDropToResize: false,
+        enableFilterMenuItem: false,
+        enableHideColumnMenuItem: false,
+        enableRowDrag: false,
+        enableRowChecked: false,
         frozen: PlutoColumnFrozen.start,
-        renderer: (ctx) {
-          return Container(
-            alignment: Alignment.centerLeft,
-            padding: EdgeInsets.symmetric(horizontal: 8),
+        cellPadding: EdgeInsets.zero,
+        renderer: (ctx) => Container(
+          constraints: BoxConstraints.expand(),
+          alignment: Alignment.centerLeft,
+          padding: EdgeInsets.zero,
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            border: Border(
+              right: BorderSide(color: Colors.blue, width: 1),
+              bottom: BorderSide(color: Colors.blue, width: 1),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
               ctx.cell.value.toString(),
               style: TextStyle(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w500,
                 fontSize: 14,
               ),
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
 
-    columnGroups.add(
-      PlutoColumnGroup(
-        title: "Process",
-        fields: ["process_name"],
-        backgroundColor: Colors.blue.shade300,
-      ),
-    );
-
-    // Create rows for each process
+    // Create rows for each process (sudah terurut berdasarkan desiredOrder)
     for (final processName in processNames) {
       final cells = <String, PlutoCell>{
         "process_name": PlutoCell(value: processName),
@@ -311,15 +474,32 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
           enableContextMenu: false,
           enableSorting: false,
           enableEditingMode: false,
+          enableDropToResize: false,
+          enableFilterMenuItem: false,
+          enableHideColumnMenuItem: false,
+          enableRowDrag: false,
+          enableRowChecked: false,
+          cellPadding: EdgeInsets.zero,
           renderer: (ctx) {
             final value = ctx.cell.value;
+            final isWeekend = _isWeekend(dateStr);
+            
             return Container(
+              constraints: BoxConstraints.expand(),
               alignment: Alignment.center,
+              padding: EdgeInsets.zero,
+              decoration: BoxDecoration(
+                color: isWeekend ? Colors.grey.shade300 : Colors.blue.shade50,
+                border: Border(
+                  right: BorderSide(color: Colors.blue, width: 1),
+                  bottom: BorderSide(color: Colors.blue, width: 1),
+                ),
+              ),
               child: Text(
                 value?.toString() ?? '0',
                 style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                   color: (value ?? 0) > 0 ? Colors.black : Colors.grey,
                 ),
               ),
@@ -338,46 +518,65 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
     );
   }
 
+  bool _isWeekend(String dateStr) {
+    try {
+      final date = DateFormat('yyyy-MM-dd').parse(dateStr);
+      return date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<int> _getProcessTotalForDateAndLine(String dateStr, String processName, String line) async {
     try {
       final processDocName = processName.replaceAll(' ', '_');
       int total = 0;
       
-      // Gunakan pendekatan yang sama seperti di final_page
+      // Query kedua tipe secara parallel
+      final typeQueries = <Future<int>>[];
+      
       for (final type in ["Kumitate", "Part"]) {
-        try {
-          final processRef = FirebaseFirestore.instance
-              .collection('counter_sistem')
-              .doc(dateStr)
-              .collection(line)
-              .doc(type)
-              .collection(selectedContract!)
-              .doc(processDocName);
-
-          final doc = await processRef.get();
-          
-          if (!doc.exists) continue;
-
-          final data = doc.data()!;
-
-          // Baca semua field data seperti di final_page
-          data.forEach((key, value) {
-            if (key != 'sequence' && 
-                key != 'belumKensa' && 
-                key != 'stock_20min' && 
-                key != 'stock_pagi' && 
-                key != 'part' &&
-                value is Map<String, dynamic>) {
-              value.forEach((lineKey, lineValue) {
-                total += (lineValue as int? ?? 0);
-              });
-            }
-          });
-        } catch (e) {
-          // Continue ke type berikutnya jika error
-          continue;
-        }
+        typeQueries.add(_getTypeTotal(dateStr, processDocName, line, type));
       }
+      
+      final results = await Future.wait(typeQueries);
+      total = results.fold(0, (sum, value) => sum + value);
+      
+      return total;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<int> _getTypeTotal(String dateStr, String processDocName, String line, String type) async {
+    try {
+      final processRef = FirebaseFirestore.instance
+          .collection('counter_sistem')
+          .doc(dateStr)
+          .collection(line)
+          .doc(type)
+          .collection(selectedContract!)
+          .doc(processDocName);
+
+      final doc = await processRef.get();
+      
+      if (!doc.exists) return 0;
+
+      final data = doc.data()!;
+      int total = 0;
+
+      data.forEach((key, value) {
+        if (key != 'sequence' && 
+            key != 'belumKensa' && 
+            key != 'stock_20min' && 
+            key != 'stock_pagi' && 
+            key != 'part' &&
+            value is Map<String, dynamic>) {
+          value.forEach((lineKey, lineValue) {
+            total += (lineValue as int? ?? 0);
+          });
+        }
+      });
 
       return total;
     } catch (e) {
@@ -492,7 +691,7 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                             selectedContract = value;
                           });
                           if (value != null) {
-                            _loadContractData();
+                            _scheduleLoadData(); // Gunakan debounced version
                           }
                         },
                         selectedItem: selectedContract,
@@ -540,7 +739,7 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                           onChanged: (value) {
                             setState(() => selectedYear = value!);
                             if (selectedContract != null) {
-                              _loadContractData();
+                              _scheduleLoadData(); // Gunakan debounced version
                             }
                           },
                           icon: Icon(Icons.arrow_drop_down, size: 24, color: Colors.blue.shade600),
@@ -579,7 +778,7 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                           onChanged: (value) {
                             setState(() => selectedMonth = value!);
                             if (selectedContract != null) {
-                              _loadContractData();
+                              _scheduleLoadData(); // Gunakan debounced version
                             }
                           },
                           icon: Icon(Icons.arrow_drop_down, size: 24, color: Colors.blue.shade600),
@@ -596,20 +795,22 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
 
           // Data Table
           Expanded(
-            child: isLoadingData
-                ? _buildLoadingWidget()
-                : selectedContract == null
-                    ? _buildPlaceholderWidget("Please select a contract to view data", Icons.assignment)
-                    : rows.isEmpty
-                        ? _buildPlaceholderWidget("No data available for selected contract", Icons.data_array)
-                        : _buildDataTable(),
+            child: isLoadingContracts
+                ? _buildLoadingWidget("Loading contracts...")
+                : isLoadingData
+                    ? _buildLoadingWidget("Loading contract data...")
+                    : selectedContract == null
+                        ? _buildPlaceholderWidget("Please select a contract to view data", Icons.assignment)
+                        : rows.isEmpty
+                            ? _buildPlaceholderWidget("No data available for selected contract", Icons.data_array)
+                            : _buildDataTable(),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildLoadingWidget() {
+  Widget _buildLoadingWidget(String message) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -617,18 +818,29 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
           CircularProgressIndicator(),
           SizedBox(height: 16),
           Text(
-            "Loading contract data...",
+            message,
             style: TextStyle(
               fontSize: 16,
               color: Colors.blue.shade700,
             ),
           ),
           SizedBox(height: 8),
+          if (selectedContract != null) ...[
+            Text(
+              "Contract: $selectedContract",
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.blue.shade600,
+              ),
+            ),
+            SizedBox(height: 4),
+          ],
           Text(
-            "Contract: $selectedContract",
+            "This may take a few moments...",
             style: TextStyle(
-              fontSize: 14,
-              color: Colors.blue.shade600,
+              fontSize: 12,
+              color: Colors.blue.shade500,
+              fontStyle: FontStyle.italic,
             ),
           ),
         ],
@@ -661,6 +873,17 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
               ),
             ),
           ],
+          if (contractNames.isEmpty) ...[
+            SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadMasterContracts,
+              child: Text("Retry Loading Contracts"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue.shade500,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -678,9 +901,14 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
           style: PlutoGridStyleConfig(
             gridBackgroundColor: Colors.blue.shade50,
             rowColor: Colors.blue.shade50,
-            borderColor: Colors.blue.shade800,
-            rowHeight: 50,
-            columnHeight: 50,
+            borderColor: Colors.blue,
+            rowHeight: 32,
+            columnHeight: 36,
+            cellTextStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            columnTextStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            activatedBorderColor: Colors.blue,
+            activatedColor: Colors.blue.shade50,
+            gridBorderColor: Colors.blue,
           ),
           scrollbar: PlutoGridScrollbarConfig(
             isAlwaysShown: true,

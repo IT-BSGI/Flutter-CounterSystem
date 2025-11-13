@@ -31,33 +31,39 @@ class _LineAPageState extends State<LineAPage> {
   String _countdown = '';
   bool _shouldBlink = false;
   final List<TimeOfDay> _hourlyIntervals = [
+    TimeOfDay(hour: 7, minute: 30),
     TimeOfDay(hour: 8, minute: 30),
     TimeOfDay(hour: 9, minute: 30),
     TimeOfDay(hour: 10, minute: 30),
     TimeOfDay(hour: 11, minute: 30),
-    TimeOfDay(hour: 12, minute: 30),
-    TimeOfDay(hour: 13, minute: 30),
+  TimeOfDay(hour: 12, minute: 30),
     TimeOfDay(hour: 14, minute: 30),
     TimeOfDay(hour: 15, minute: 30),
     TimeOfDay(hour: 16, minute: 30),
+    TimeOfDay(hour: 17, minute: 55),
+    TimeOfDay(hour: 18, minute: 55),
+    TimeOfDay(hour: 19, minute: 55),
   ];
 
+  // Variables for real-time target calculation
+  double _totalDailyTarget = 0.0;
+  List<Map<String, dynamic>> _styles = [];
+  Map<String, dynamic>? _overtimeData;
+
   // Work hours configuration
-  final _startWorkTime = TimeOfDay(hour: 7, minute: 30);
-  final _endWorkTime = TimeOfDay(hour: 16, minute: 30);
-  final _breakStart = TimeOfDay(hour: 11, minute: 30);
-  final _breakEnd = TimeOfDay(hour: 12, minute: 30);
+  final TimeOfDay _startWorkTime = TimeOfDay(hour: 7, minute: 30);
+  final TimeOfDay _endWorkTime = TimeOfDay(hour: 16, minute: 30);
 
   @override
   void initState() {
     super.initState();
     _setupStreams();
-    _updateTime(); // Initialize time
+    _updateTime();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!_isLoading) {
         _calculateCurrentTarget();
         _updateDisplayValues();
-        _updateTime(); // Update time every second
+        _updateTime();
       }
     });
   }
@@ -82,50 +88,226 @@ class _LineAPageState extends State<LineAPage> {
   }
 
   void _updateCountdown(DateTime now) {
-  final currentTime = TimeOfDay.fromDateTime(now);
-  
-  // Find the next interval
-  TimeOfDay? nextInterval;
-  for (final interval in _hourlyIntervals) {
-    if (interval.hour > currentTime.hour || 
-        (interval.hour == currentTime.hour && interval.minute > currentTime.minute)) {
-      nextInterval = interval;
-      break;
+    final currentTime = TimeOfDay.fromDateTime(now);
+    
+    // Find the next interval
+    TimeOfDay? nextInterval;
+    for (final interval in _hourlyIntervals) {
+      if (interval.hour > currentTime.hour || 
+          (interval.hour == currentTime.hour && interval.minute > currentTime.minute)) {
+        nextInterval = interval;
+        break;
+      }
+    }
+    
+    if (nextInterval == null) {
+      _countdown = 'End of Day';
+      _shouldBlink = false;
+      return;
+    }
+    
+    // Calculate time until next interval
+    final nextDateTime = DateTime(
+      now.year, 
+      now.month, 
+      now.day, 
+      nextInterval.hour, 
+      nextInterval.minute
+    );
+    
+    final difference = nextDateTime.difference(now);
+    
+    if (difference.isNegative) {
+      _countdown = '00:00';
+      _shouldBlink = true;
+    } else {
+      final minutes = (difference.inMinutes.remainder(60)).toString().padLeft(2, '0');
+      final seconds = (difference.inSeconds.remainder(60)).toString().padLeft(2, '0');
+      _countdown = '$minutes:$seconds';
+      _shouldBlink = difference.inMinutes < 1;
     }
   }
-  
-  if (nextInterval == null) {
-    _countdown = 'End of Day';
-    _shouldBlink = false; // Tidak kedip di end of day
-    return;
-  }
-  
-  // Calculate time until next interval
-  final nextDateTime = DateTime(
-    now.year, 
-    now.month, 
-    now.day, 
-    nextInterval.hour, 
-    nextInterval.minute
-  );
-  
-  final difference = nextDateTime.difference(now);
-  
-  if (difference.isNegative) {
-    _countdown = '00:00';
-    _shouldBlink = true; // Tetap kedip jika waktu habis
-  } else {
-    final minutes = (difference.inMinutes.remainder(60)).toString().padLeft(2, '0');
-    final seconds = (difference.inSeconds.remainder(60)).toString().padLeft(2, '0');
-    _countdown = '$minutes:$seconds';
+
+  void _processTargetMap(Map<String, dynamic>? targetMap) {
+    print('Processing target map for Line A');
     
-    // Kembali ke kondisi normal: kedip hanya jika kurang dari 1 menit
-    _shouldBlink = difference.inMinutes < 1;
+    _styles = [];
+    _overtimeData = null;
+    _totalDailyTarget = 0.0;
+
+    if (targetMap != null && targetMap.isNotEmpty) {
+      print('Target map found: $targetMap');
+      
+      // Extract style data (except overtime)
+      targetMap.forEach((key, value) {
+        if (key != 'overtime' && value is Map) {
+          _styles.add({
+            'key': key,
+            'quantity': (value['quantity'] as num?)?.toDouble() ?? 0.0,
+            'time_perpcs': (value['time_perpcs'] as num?)?.toDouble() ?? 0.0,
+          });
+        }
+      });
+
+      // Sort styles by key (style1, style2, etc)
+      _styles.sort((a, b) => a['key'].compareTo(b['key']));
+      print('Sorted styles: $_styles');
+
+      // Calculate total daily target from styles
+      for (var style in _styles) {
+        _totalDailyTarget += style['quantity'] ?? 0.0;
+      }
+
+      // Process overtime data
+      if (targetMap.containsKey('overtime')) {
+        print('Processing overtime data');
+        _overtimeData = targetMap['overtime'] as Map<String, dynamic>;
+        double overtimeQuantity = (_overtimeData?['quantity'] as num?)?.toDouble() ?? 0.0;
+        _totalDailyTarget += overtimeQuantity;
+      }
+
+      print('Total daily target: $_totalDailyTarget');
+    } else {
+      print('No target map found');
+      if (_plan != null) {
+        _totalDailyTarget = _plan!.toDouble();
+        print('Using plan as total daily target: $_totalDailyTarget');
+      }
+    }
   }
-}
+
+  void _calculateCurrentTarget() {
+    final now = DateTime.now();
+    final currentTime = TimeOfDay.fromDateTime(now);
+    
+    // If before work start time, target is 0
+    if (_isBeforeWorkTime(currentTime)) {
+      _currentTarget = 0.0;
+      return;
+    }
+
+    // If after work end time, target is the total daily target
+    if (_isAfterWorkTime(currentTime)) {
+      _currentTarget = _totalDailyTarget;
+      return;
+    }
+
+    // Calculate elapsed seconds since work start
+    double elapsedSeconds = _getElapsedSeconds(now);
+    
+    // Calculate target based on real-time progression
+    _currentTarget = _calculateRealTimeTarget(elapsedSeconds);
+  }
+
+  bool _isBeforeWorkTime(TimeOfDay currentTime) {
+    return currentTime.hour < _startWorkTime.hour || 
+          (currentTime.hour == _startWorkTime.hour && currentTime.minute < _startWorkTime.minute);
+  }
+
+  bool _isAfterWorkTime(TimeOfDay currentTime) {
+    return currentTime.hour > _endWorkTime.hour || 
+          (currentTime.hour == _endWorkTime.hour && currentTime.minute > _endWorkTime.minute);
+  }
+
+  double _getElapsedSeconds(DateTime now) {
+    final startTime = DateTime(now.year, now.month, now.day, _startWorkTime.hour, _startWorkTime.minute);
+  final breakStart = DateTime(now.year, now.month, now.day, 11, 30);
+  final breakEnd = DateTime(now.year, now.month, now.day, 12, 30);
+    
+    double elapsedSeconds = now.difference(startTime).inSeconds.toDouble();
+    
+    // Adjust for break time
+    if (now.isAfter(breakStart)) {
+      if (now.isBefore(breakEnd)) {
+        // Currently in break, so elapsed time is until break start
+        elapsedSeconds = breakStart.difference(startTime).inSeconds.toDouble();
+      } else {
+        // After break, subtract break duration
+        elapsedSeconds -= breakEnd.difference(breakStart).inSeconds.toDouble();
+      }
+    }
+    
+    return elapsedSeconds > 0 ? elapsedSeconds : 0.0;
+  }
+
+  double _calculateRealTimeTarget(double elapsedSeconds) {
+    if (_styles.isEmpty && _plan == null) {
+      return 0.0;
+    }
+
+    // If we have target map with styles, calculate based on time_perpcs
+    if (_styles.isNotEmpty) {
+      return _calculateTargetFromStyles(elapsedSeconds);
+    } 
+    // Fallback: linear progression based on total work time
+    else if (_plan != null) {
+      return _calculateLinearTarget(elapsedSeconds);
+    }
+    
+    return 0.0;
+  }
+
+  double _calculateTargetFromStyles(double elapsedSeconds) {
+    double target = 0.0;
+    double remainingTime = elapsedSeconds;
+    
+    // Process each style in order
+    for (var style in _styles) {
+      double quantity = style['quantity'] ?? 0.0;
+      double timePerPcs = style['time_perpcs'] ?? 0.0;
+      
+      if (timePerPcs <= 0 || quantity <= 0) continue;
+      
+      // Calculate time required for this style
+      double styleTimeRequired = quantity * timePerPcs;
+      
+      if (remainingTime >= styleTimeRequired) {
+        // This style is fully completed
+        target += quantity;
+        remainingTime -= styleTimeRequired;
+      } else {
+        // Partial completion of this style
+        target += remainingTime / timePerPcs;
+        remainingTime = 0;
+        break;
+      }
+    }
+    
+    // Process overtime if there's remaining time and overtime data
+    if (remainingTime > 0 && _overtimeData != null) {
+      double overtimeQuantity = (_overtimeData?['quantity'] as num?)?.toDouble() ?? 0.0;
+      double overtimeTimePerPcs = (_overtimeData?['time_perpcs'] as num?)?.toDouble() ?? 0.0;
+      
+      if (overtimeTimePerPcs > 0 && overtimeQuantity > 0) {
+        double overtimeTimeRequired = overtimeQuantity * overtimeTimePerPcs;
+        
+        if (remainingTime >= overtimeTimeRequired) {
+          target += overtimeQuantity;
+        } else {
+          target += remainingTime / overtimeTimePerPcs;
+        }
+      }
+    }
+    
+    // Cap at total daily target
+    return target > _totalDailyTarget ? _totalDailyTarget : target;
+  }
+
+  double _calculateLinearTarget(double elapsedSeconds) {
+    // Total work seconds from 07:30 to 16:30 with break (8 hours = 28800 seconds)
+    const totalWorkSeconds = 28800.0;
+    
+    if (elapsedSeconds >= totalWorkSeconds) {
+      return _totalDailyTarget;
+    }
+    
+    // Linear progression
+    return (_totalDailyTarget * elapsedSeconds) / totalWorkSeconds;
+  }
 
   void _setupStreams() {
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.date);
+    print('Setting up streams for date: $dateStr, Line A');
     
     _planSubscription = _firestore.collection('counter_sistem')
       .doc(dateStr)
@@ -133,20 +315,30 @@ class _LineAPageState extends State<LineAPage> {
       .listen((DocumentSnapshot snapshot) {
         if (snapshot.exists) {
           final data = snapshot.data() as Map<String, dynamic>?;
+          final plan = data?['target_A'] as int? ?? 0;
+          print('Plan data received: $plan');
+          
           setState(() {
-            _plan = data?['target_A'] as int? ?? 0;
-            _calculateCurrentTarget();
+            _plan = plan;
           });
+          
+          // Process target_map_A for real-time calculation
+          final targetMap = data?['target_map_A'] as Map<String, dynamic>?;
+          print('Target map received: $targetMap');
+          _processTargetMap(targetMap);
         } else {
+          print('No document found for date: $dateStr');
           setState(() {
             _plan = 0;
           });
+          _processTargetMap(null);
         }
       }, onError: (error) {
         debugPrint('Error listening to plan stream: $error');
         setState(() {
           _plan = 0;
         });
+        _processTargetMap(null);
       });
 
     // Setup Kumitate document stream to get contract list
@@ -169,9 +361,11 @@ class _LineAPageState extends State<LineAPage> {
           contractCollections = ['Process'];
         }
 
+        print('Contract collections for Line A: $contractCollections');
         _setupContractStreams(kumitateDocRef, contractCollections);
       } else {
         // If Kumitate document doesn't exist, fallback to legacy structure
+        print('Kumitate document not found, using fallback structure');
         _setupContractStreams(kumitateDocRef, ['Process']);
       }
     }, onError: (error) {
@@ -222,6 +416,7 @@ class _LineAPageState extends State<LineAPage> {
               });
               
               _contractData[contractName] = contractTotal;
+              print('Contract $contractName total: $contractTotal');
               _updateTotalActual();
             } else {
               _contractData[contractName] = 0;
@@ -242,70 +437,10 @@ class _LineAPageState extends State<LineAPage> {
     for (final value in _contractData.values) {
       total += value;
     }
+    print('Total actual updated: $total');
     setState(() {
       _actual = total;
     });
-  }
-
-  void _calculateCurrentTarget() {
-    if (_plan == null) {
-      _currentTarget = 0.0;
-      return;
-    }
-
-    final now = DateTime.now();
-    final startOfWork = DateTime(
-      now.year, 
-      now.month, 
-      now.day, 
-      _startWorkTime.hour, 
-      _startWorkTime.minute
-    );
-    final endOfWork = DateTime(
-      now.year, 
-      now.month, 
-      now.day, 
-      _endWorkTime.hour, 
-      _endWorkTime.minute
-    );
-    
-    if (now.isBefore(startOfWork)) {
-      _currentTarget = 0.0;
-      return;
-    }
-    
-    if (now.isAfter(endOfWork)) {
-      _currentTarget = _plan!.toDouble();
-      return;
-    }
-
-    final breakStart = DateTime(
-      now.year, 
-      now.month, 
-      now.day, 
-      _breakStart.hour, 
-      _breakStart.minute
-    );
-    final breakEnd = DateTime(
-      now.year, 
-      now.month, 
-      now.day, 
-      _breakEnd.hour, 
-      _breakEnd.minute
-    );
-    
-    double workingSeconds;
-    
-    if (now.isBefore(breakStart)) {
-      workingSeconds = now.difference(startOfWork).inSeconds.toDouble();
-    } else if (now.isBefore(breakEnd)) {
-      workingSeconds = breakStart.difference(startOfWork).inSeconds.toDouble();
-    } else {
-      workingSeconds = breakStart.difference(startOfWork).inSeconds.toDouble() +
-          now.difference(breakEnd).inSeconds.toDouble();
-    }
-    
-    _currentTarget = (_plan! * workingSeconds / 28800);
   }
 
   void _updateDisplayValues() {
@@ -315,6 +450,7 @@ class _LineAPageState extends State<LineAPage> {
       if (currentTargetInt > _lastStableTarget) {
         _lastStableTarget = currentTargetInt;
         _displayedTarget = _lastStableTarget;
+        print('Displayed target updated: $_displayedTarget');
       }
     });
   }

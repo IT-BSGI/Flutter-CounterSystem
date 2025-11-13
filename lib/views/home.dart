@@ -21,7 +21,8 @@ class _HomePageState extends State<HomePage> {
   bool _showRightArrow = false;
   bool _isSlideshowRunning = true;
   String? _pausedLine;
-  Map<String, double> _targets = {};
+  Map<String, double> _dailyTargets = {};
+  Map<String, Map<String, double>> _hourlyTargets = {};
   Map<String, StreamSubscription> _streamSubscriptions = {};
 
   // Updated time slots to match counter_table_screen.dart
@@ -145,9 +146,9 @@ class _HomePageState extends State<HomePage> {
     
     setState(() => isLoading = true);
     
-  String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-  String currentLine = _pausedLine ?? lineData.keys.elementAt(_currentPage);
-  String? currentProcessName = selectedProcesses[currentLine];
+    String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
+    String currentLine = _pausedLine ?? lineData.keys.elementAt(_currentPage);
+    String? currentProcessName = selectedProcesses[currentLine];
 
     try {
       var newData = await fetchLineData(currentLine, formattedDate);
@@ -177,23 +178,161 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _fetchTarget(String line, String date) async {
     try {
-      DocumentSnapshot snapshot = await FirebaseFirestore.instance
-          .collection('counter_sistem')
-          .doc(date)
-          .get();
+      final docRef = FirebaseFirestore.instance.collection('counter_sistem').doc(date);
+      final doc = await docRef.get();
+      
+      if (doc.exists) {
+        final data = doc.data()!;
+        final targetMap = data['target_map_$line'] as Map<String, dynamic>? ?? {};
 
-      if (snapshot.exists) {
-        Map<String, dynamic>? data = snapshot.data() as Map<String, dynamic>?;
-        double target = data?['target_$line'] is num 
-            ? (data?['target_$line'] as num).toDouble() 
-            : 0.0;
-        
+        // Inisialisasi hourly targets
+        Map<String, double> calculatedHourlyTargets = {
+          '08:30': 0.0,
+          '09:30': 0.0,
+          '10:30': 0.0,
+          '11:30': 0.0,
+          '13:30': 0.0,
+          '14:30': 0.0,
+          '15:30': 0.0,
+          '16:30': 0.0,
+          '17:55': 0.0,
+          '18:55': 0.0,
+          '19:55': 0.0,
+        };
+
+        double totalDailyTarget = 0.0;
+
+        if (targetMap.isNotEmpty) {
+          // Ekstrak style data (kecuali overtime)
+          List<Map<String, dynamic>> styles = [];
+          targetMap.forEach((key, value) {
+            if (key != 'overtime' && value is Map) {
+              styles.add({
+                'key': key,
+                'quantity': (value['quantity'] as num?)?.toDouble() ?? 0.0,
+                'time_perpcs': (value['time_perpcs'] as num?)?.toDouble() ?? 0.0,
+              });
+            }
+          });
+
+          // Urutkan styles berdasarkan key (style1, style2, dll)
+          styles.sort((a, b) => a['key'].compareTo(b['key']));
+
+          // Hitung target per jam untuk style normal (08:30 - 16:30)
+          // Alokasi berbasis detik per slot sehingga sisa waktu di slot dapat dipakai oleh style berikutnya
+          List<String> normalTimeSlots = ['08:30', '09:30', '10:30', '11:30', '13:30', '14:30', '15:30', '16:30'];
+          int currentTimeSlotIndex = 0;
+
+          final Map<String, double> slotRemainingSeconds = { for (var s in normalTimeSlots) s: 3600.0 };
+
+          for (var style in styles) {
+            double remainingQuantity = style['quantity'];
+            double timePerPcs = style['time_perpcs'];
+
+            if (timePerPcs <= 0) continue;
+
+            while (remainingQuantity > 0 && currentTimeSlotIndex < normalTimeSlots.length) {
+              final currentTimeSlot = normalTimeSlots[currentTimeSlotIndex];
+              double slotSec = slotRemainingSeconds[currentTimeSlot] ?? 3600.0;
+
+              if (slotSec <= 1e-9) {
+                currentTimeSlotIndex++;
+                continue;
+              }
+
+              final possiblePieces = slotSec / timePerPcs;
+              if (possiblePieces <= 1e-9) {
+                currentTimeSlotIndex++;
+                continue;
+              }
+
+              final allocated = possiblePieces >= remainingQuantity ? remainingQuantity : possiblePieces;
+
+              calculatedHourlyTargets[currentTimeSlot] = (calculatedHourlyTargets[currentTimeSlot] ?? 0.0) + allocated;
+              remainingQuantity -= allocated;
+              totalDailyTarget += allocated;
+
+              slotSec -= allocated * timePerPcs;
+              slotRemainingSeconds[currentTimeSlot] = slotSec;
+
+              if (slotSec <= 1e-9) currentTimeSlotIndex++;
+            }
+
+            if (remainingQuantity > 0 && currentTimeSlotIndex >= normalTimeSlots.length) {
+              break;
+            }
+          }
+
+          // Hitung overtime (sama: gunakan sisa detik per slot overtime)
+          if (targetMap.containsKey('overtime')) {
+            final overtimeData = targetMap['overtime'] as Map<String, dynamic>;
+            double overtimeQuantity = (overtimeData['quantity'] as num?)?.toDouble() ?? 0.0;
+            double overtimeTimePerPcs = (overtimeData['time_perpcs'] as num?)?.toDouble() ?? 0.0;
+
+            if (overtimeTimePerPcs > 0 && overtimeQuantity > 0) {
+              List<String> overtimeTimeSlots = ['17:55', '18:55', '19:55'];
+              double remainingOvertime = overtimeQuantity;
+              final Map<String, double> overtimeSlotSec = { for (var s in overtimeTimeSlots) s: 3600.0 };
+              int otIndex = 0;
+              while (remainingOvertime > 0 && otIndex < overtimeTimeSlots.length) {
+                final slot = overtimeTimeSlots[otIndex];
+                double slotSec = overtimeSlotSec[slot] ?? 3600.0;
+                if (slotSec <= 1e-9) { otIndex++; continue; }
+
+                final possiblePieces = slotSec / overtimeTimePerPcs;
+                if (possiblePieces <= 1e-9) { otIndex++; continue; }
+
+                final allocated = possiblePieces >= remainingOvertime ? remainingOvertime : possiblePieces;
+                calculatedHourlyTargets[slot] = (calculatedHourlyTargets[slot] ?? 0.0) + allocated;
+                remainingOvertime -= allocated;
+                totalDailyTarget += allocated;
+
+                slotSec -= allocated * overtimeTimePerPcs;
+                overtimeSlotSec[slot] = slotSec;
+
+                if (slotSec <= 1e-9) otIndex++;
+              }
+            }
+          }
+        } else {
+          // Fallback ke target lama jika tidak ada mapping
+          final target = data['target_$line'];
+          if (target is num) {
+            totalDailyTarget = target.toDouble();
+            double targetPerHour = totalDailyTarget / 8;
+            
+            calculatedHourlyTargets = {
+              '08:30': targetPerHour,
+              '09:30': targetPerHour,
+              '10:30': targetPerHour,
+              '11:30': targetPerHour,
+              '13:30': targetPerHour,
+              '14:30': targetPerHour,
+              '15:30': targetPerHour,
+              '16:30': targetPerHour,
+              '17:55': 0.0,
+              '18:55': 0.0,
+              '19:55': 0.0,
+            };
+          }
+        }
+
         setState(() {
-          _targets[line] = target;
+          _dailyTargets[line] = totalDailyTarget;
+          _hourlyTargets[line] = calculatedHourlyTargets;
+        });
+      } else {
+        setState(() {
+          _dailyTargets[line] = 0.0;
+          _hourlyTargets[line] = {};
         });
       }
     } catch (e) {
-      print("Error fetching target for Line $line: $e");
+      print('Error loading targets for line $line: $e');
+      setState(() {
+        _dailyTargets[line] = 0.0;
+        _hourlyTargets[line] = {};
+      });
     }
   }
 
@@ -419,14 +558,12 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // ...existing code...
-
   Future<void> loadData() async {
     setState(() => isLoading = true);
     
     String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-  Map<String, List<Map<String, dynamic>>> newData = {};
-  Map<String, String?> newSelectedProcesses = {};
+    Map<String, List<Map<String, dynamic>>> newData = {};
+    Map<String, String?> newSelectedProcesses = {};
 
     final currentLineBeforeRefresh = _pausedLine ?? (_currentPage < lineData.length ? lineData.keys.elementAt(_currentPage) : null);
     final currentPageBeforeRefresh = _currentPage;
@@ -486,8 +623,8 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildHeader(String line, List<Map<String, dynamic>> processes) {
     String? currentProcess = selectedProcesses[line];
-    double? target = _targets[line];
-    double targetPerHour = target != null ? target / 8 : 0.0;
+    double? dailyTarget = _dailyTargets[line];
+    Map<String, double>? hourlyTargets = _hourlyTargets[line];
 
     // Build deduplicated list of process names (labels). Selecting a name
     // will aggregate data across all contracts that have the same name.
@@ -550,25 +687,26 @@ class _HomePageState extends State<HomePage> {
                   color: Colors.blue.shade800,
                 ),
               ),
-              if (target != null) ...[
+              if (dailyTarget != null && dailyTarget > 0) ...[
                 SizedBox(width: 16),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Target: ${target.round()}',
+                      'Target: ${dailyTarget.round()}',
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.blue.shade800,
                       ),
                     ),
-                    Text(
-                      'Per Jam: ${targetPerHour.round()}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.blue.shade600,
+                    if (hourlyTargets != null && hourlyTargets.isNotEmpty)
+                      Text(
+                        'Per Jam: ${hourlyTargets.values.first.round()}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.blue.shade600,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ],
@@ -650,7 +788,8 @@ class _HomePageState extends State<HomePage> {
       cumulative[t] = running;
     }
 
-    double? target = _targets[line];
+    double? dailyTarget = _dailyTargets[line];
+    Map<String, double>? hourlyTargets = _hourlyTargets[line];
 
     List<FlSpot> spots = [];
     List<FlSpot> targetSpots = [];
@@ -658,31 +797,14 @@ class _HomePageState extends State<HomePage> {
 
     // Add initial spot at 0
     spots.add(FlSpot(0, 0));
-    if (target != null) {
+    if (dailyTarget != null) {
       targetSpots.add(FlSpot(0, 0));
     }
 
     // Calculate cumulative target for each time slot
     double cumulativeTarget = 0.0;
-    Map<String, double> hourlyTargets = {};
     
-    if (target != null) {
-      double targetPerHour = target / 8;
-      
-      hourlyTargets = {
-        '08:30': targetPerHour,
-        '09:30': targetPerHour,
-        '10:30': targetPerHour,
-        '11:30': targetPerHour,
-        '13:30': targetPerHour,
-        '14:30': targetPerHour,
-        '15:30': targetPerHour,
-        '16:30': targetPerHour,
-        '17:55': 0.0,
-        '18:55': 0.0,
-        '19:55': 0.0,
-      };
-      
+    if (dailyTarget != null && hourlyTargets != null) {
       // Add spots for target line
       for (int i = 0; i < timeSlots.length; i++) {
         String time = timeSlots[i];
@@ -698,7 +820,7 @@ class _HomePageState extends State<HomePage> {
       spots.add(FlSpot((i+1).toDouble(), value.toDouble()));
       
       if (value > maxY) maxY = value.toDouble();
-      if (target != null && cumulativeTarget > maxY) maxY = cumulativeTarget;
+      if (dailyTarget != null && cumulativeTarget > maxY) maxY = cumulativeTarget;
     }
 
     if (maxY == 0) maxY = 10;
@@ -902,7 +1024,7 @@ class _HomePageState extends State<HomePage> {
                               ),
                             ),
                           ),
-                          if (target != null)
+                          if (dailyTarget != null)
                             LineChartBarData(
                               spots: targetSpots,
                               isCurved: false,
