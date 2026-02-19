@@ -6,6 +6,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:excel/excel.dart' as excel;
 import 'package:file_saver/file_saver.dart';
 import 'dart:typed_data';
+import 'dart:async';
 
 class AllCounterDataScreen extends StatefulWidget {
   @override
@@ -13,11 +14,18 @@ class AllCounterDataScreen extends StatefulWidget {
 }
 
 class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
-  // Untuk tabel Proses (akumulatif 12345 per timeslot)
+  // Untuk tabel Proses Kumitate (akumulatif 12345 per timeslot)
   List<PlutoColumn> prosesColumns = [];
   List<PlutoRow> prosesRows = [];
   String? selectedProcessName;
   List<String> processNames = [];
+
+  // Untuk tabel Proses Part (akumulatif 12345 per timeslot)
+  List<PlutoColumn> partProsesColumns = [];
+  List<PlutoRow> partProsesRows = [];
+  String? selectedPartProcessName;
+  List<String> partProcessNames = [];
+  List<PlutoColumnGroup> partProsesColumnGroups = [];
 
   // Build tabel Proses: timeslot, 1,2,3,4,5, total akumulatif per timeslot
   void _buildProsesTable() {
@@ -167,20 +175,17 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       for (int i = 1; i <= 5; i++) {
         // Jam: hanya perolehan di jam itu saja
         final jamRaw = proses["${time}_$i"];
-        final jamValue = jamRaw == null ? ' ' : (jamRaw is int ? (jamRaw == 0 ? ' ' : jamRaw) : jamRaw.toString() == '0' ? ' ' : jamRaw);
+        final jamValue = jamRaw == null ? 0 : (jamRaw is int ? jamRaw : int.tryParse(jamRaw.toString()) ?? 0);
         // Ak: akumulatif sampai jam itu
         int akumulatif = 0;
-        bool hasData = false;
         for (final t in visibleTimeSlotsProses) {
           final val = proses["${t}_$i"];
-          if (val != null && val != 0 && val.toString() != '0') hasData = true;
           if (t.compareTo(time) > 0) break;
           akumulatif += (val is int ? val : int.tryParse(val?.toString() ?? '0') ?? 0);
           if (t == time) break;
         }
         cells["line_${i}_jam"] = PlutoCell(value: jamValue);
-        // Akumulatif: jika tidak ada data sama sekali, tampilkan ' '
-        cells["line_${i}_ak"] = PlutoCell(value: hasData ? akumulatif : ' ');
+        cells["line_${i}_ak"] = PlutoCell(value: akumulatif);
       }
       prosesRows.add(PlutoRow(cells: cells));
     }
@@ -188,6 +193,168 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     this.prosesColumns = prosesColumns;
     this.prosesRows = prosesRows;
     this.prosesColumnGroups = prosesColumnGroups;
+  }
+
+  // Build tabel Proses Part: timeslot, per line (1-3) Jam & Ak
+  // Data Part menyimpan ${time}_1, ${time}_2, ${time}_3 dan ${time}_cumulative
+  void _buildPartProsesTable() {
+    // Kolom: TIME, lalu per line (1-3) grup: Jam, Ak
+    partProsesColumns = [
+      PlutoColumn(
+        title: "TIME",
+        field: "time_slot",
+        type: PlutoColumnType.text(),
+        width: 100,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        backgroundColor: Colors.blue.shade300,
+        enableColumnDrag: false,
+        enableContextMenu: false,
+        enableSorting: false,
+        enableEditingMode: false,
+        enableDropToResize: false,
+        renderer: (ctx) {
+          return Container(
+            alignment: Alignment.center,
+            child: Text(
+              ctx.cell.value.toString(),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+          );
+        },
+      ),
+      for (int i = 1; i <= 3; i++) ...[
+        PlutoColumn(
+          title: "Jam",
+          field: "line_${i}_jam",
+          type: PlutoColumnType.number(),
+          width: 60,
+          titleTextAlign: PlutoColumnTextAlign.center,
+          textAlign: PlutoColumnTextAlign.center,
+          backgroundColor: Colors.blue.shade200,
+          enableColumnDrag: false,
+          enableContextMenu: false,
+          enableSorting: false,
+          enableEditingMode: false,
+          enableDropToResize: false,
+          renderer: (ctx) {
+            return Container(
+              alignment: Alignment.center,
+              child: Text(
+                ctx.cell.value.toString(),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            );
+          },
+        ),
+        PlutoColumn(
+          title: "Ak",
+          field: "line_${i}_ak",
+          type: PlutoColumnType.number(),
+          width: 60,
+          titleTextAlign: PlutoColumnTextAlign.center,
+          textAlign: PlutoColumnTextAlign.center,
+          backgroundColor: Colors.blue.shade200,
+          enableColumnDrag: false,
+          enableContextMenu: false,
+          enableSorting: false,
+          enableEditingMode: false,
+          enableDropToResize: false,
+          renderer: (ctx) {
+            return Container(
+              alignment: Alignment.center,
+              child: Text(
+                ctx.cell.value.toString(),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            );
+          },
+        ),
+      ],
+    ];
+
+    // Group kolom per line (1-3)
+    partProsesColumnGroups = [
+      for (int i = 1; i <= 3; i++)
+        PlutoColumnGroup(
+          title: '$i',
+          backgroundColor: Colors.blue.shade300,
+          fields: ['line_${i}_jam', 'line_${i}_ak'],
+        ),
+    ];
+
+    // Ambil semua process_name dari partData
+    partProcessNames = partData
+        .map((e) => e["process_name"]?.toString() ?? "")
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    // Urutkan berdasarkan partProcessOrder
+    partProcessNames.sort((a, b) {
+      final aIndex = partProcessOrder.indexOf(a);
+      final bIndex = partProcessOrder.indexOf(b);
+      if (aIndex == -1) return 1;
+      if (bIndex == -1) return -1;
+      return aIndex.compareTo(bIndex);
+    });
+
+    // Pastikan selectedPartProcessName selalu valid
+    if (selectedPartProcessName == null || !partProcessNames.contains(selectedPartProcessName)) {
+      selectedPartProcessName = partProcessNames.isNotEmpty ? partProcessNames.first : null;
+    }
+
+    final partProses = partData.firstWhere(
+      (e) => e["process_name"]?.toString() == selectedPartProcessName,
+      orElse: () => {},
+    );
+
+    // Tentukan visibleTimeSlots: hanya timeslot yang ada data per-line (1-3) > 0
+    Set<String> slotsWithData = {};
+    for (final time in visibleTimeSlots) {
+      for (int i = 1; i <= 3; i++) {
+        final val = partProses["${time}_$i"];
+        if (val != null && val != 0 && val.toString() != '0') {
+          slotsWithData.add(time);
+          break;
+        }
+      }
+    }
+    final visibleTimeSlotsPartProses = visibleTimeSlots.where((t) => slotsWithData.contains(t)).toList();
+
+    // Apakah proses ini dibagi 2
+    final isDividedByTwo = dividedByTwoProcesses.contains(selectedPartProcessName);
+
+    // Build rows
+    partProsesRows = [];
+    for (final time in visibleTimeSlotsPartProses) {
+      final cells = <String, PlutoCell>{};
+      cells["time_slot"] = PlutoCell(value: time);
+
+      for (int i = 1; i <= 3; i++) {
+        // Jam: perolehan di timeslot ini untuk line i
+        final jamRaw = partProses["${time}_$i"];
+        int jamInt = jamRaw is int ? jamRaw : int.tryParse(jamRaw?.toString() ?? '') ?? 0;
+        if (isDividedByTwo) jamInt = (jamInt / 2).floor();
+
+        // Ak: akumulatif line i dari awal hingga timeslot ini
+        int akumulatif = 0;
+        for (final t in visibleTimeSlotsPartProses) {
+          final val = partProses["${t}_$i"];
+          final valInt = val is int ? val : int.tryParse(val?.toString() ?? '') ?? 0;
+          akumulatif += valInt;
+          if (t == time) break;
+        }
+        if (isDividedByTwo) akumulatif = (akumulatif / 2).floor();
+
+        cells["line_${i}_jam"] = PlutoCell(value: jamInt);
+        cells["line_${i}_ak"] = PlutoCell(value: akumulatif);
+      }
+
+      partProsesRows.add(PlutoRow(cells: cells));
+    }
+
+    this.partProsesColumns = partProsesColumns;
+    this.partProsesRows = partProsesRows;
+    this.partProsesColumnGroups = partProsesColumnGroups;
   }
   
   List<PlutoColumnGroup> prosesColumnGroups = [];
@@ -235,8 +402,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
   bool noDataAvailable = false;
 
   final List<String> timeSlots = [
-    "08:30", "09:30", "10:30", "11:30", "13:30", 
-    "14:30", "15:30", "16:30", "17:55", "18:55", "19:55",
+    "08:30", "09:30", "10:30", "11:30", "12:00",
+    "13:00", "14:00", "15:00", "16:00", "17:25", "17:55",
   ];
   
   List<String> visibleTimeSlots = [];
@@ -266,47 +433,47 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     "11:00": "11:30",
     "11:15": "11:30",
 
-    "11:30": "13:30",
-    "11:45": "13:30",
-    "12:00": "13:30",
-    "12:15": "13:30",
-    "12:30": "13:30",
-    "12:45": "13:30",
-    "13:00": "13:30",
-    "13:15": "13:30",
+    "11:30": "12:00",
+    "11:45": "12:00",
+    "12:00": "12:00",
 
-    "13:30": "14:30",
-    "13:45": "14:30",
-    "14:00": "14:30",
-    "14:15": "14:30",
-    
-    "14:30": "15:30",
-    "14:45": "15:30",
-    "15:00": "15:30",
-    "15:15": "15:30",
+    "12:15": "13:00",
+    "12:30": "13:00",
+    "12:45": "13:00",
 
-    "15:30": "16:30", 
-    "15:45": "16:30",
-    "16:00": "16:30",
-    "16:15": "16:30",
-    "16:30": "16:30",
-    
-    "16:45": "17:55",
-    "17:00": "17:55",
-    "17:15": "17:55",
-    "17:30": "17:55",
+    "13:00": "14:00",
+    "13:15": "14:00",
+    "13:30": "14:00",
+    "13:45": "14:00",
+
+    "14:00": "15:00",
+    "14:15": "15:00", 
+    "14:30": "15:00",
+    "14:45": "15:00",
+
+    "15:00": "16:00",
+    "15:15": "16:00",
+    "15:30": "16:00", 
+    "15:45": "16:00",
+    "16:00": "16:00",
+
+    "16:15": "17:25",
+    "16:30": "17:25", 
+    "16:45": "17:25",
+    "17:00": "17:25",
+    "17:15": "17:25",
+    "17:30": "17:25",
+
     "17:45": "17:55",
-
-    "18:00": "18:55",
-    "18:15": "18:55",
-    "18:30": "18:55",
-    "18:45": "18:55",
-
-    "19:00": "19:55",
-    "19:15": "19:55",
-    "19:30": "19:55",
-    "19:45": "19:55",
-    "20:00": "19:55",
+    "18:00": "17:55",
+    "18:15": "17:55",
+    "18:30": "17:55",
+    "18:45": "17:55",
+    "19:00": "17:55",
+    "19:15": "17:55",
+    "19:30": "17:55",
+    "19:45": "17:55",
+    "20:00": "17:55",
   };
 
   final List<String> partProcessOrder = [
@@ -317,32 +484,46 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
   // Urutan proses Kumitate yang diinginkan
   final List<String> kumitateProcessOrder = [
-    "Maekata JinuiFuse",
+    "Maekata Interlock",
     "Maekata Jinui",
     "Maekata Fuse",
-    "Maekata Interlock",
-    "Eri Pipping",
+    "Maekata JinuiFuse",
     "Eri Tsuke",
+    "Pipping Eri Tsuke",
     "Overlock Eri Tsuke",
+    "Itokiri Eri Tsuke",
     "Eri Fuse",
+    "Epaulate Tsuke",
     "Sode Tsuke Interlock",
+    "Karidome Waki",
+    "Deodorant Tape",
     "Sode Tsuke Honnui",
     "Iron Sode Tsuke",
     "Sode Fuse",
-    "Sode Fuse 8mm",
+    "Jinui Pocket Samping",
     "Sode Fuse 1mm",
-    "Deodorant Tape",
+    "Sode Fuse 8mm",
     "Wakinui Interlock",
+    "Kazari Mae",
+    "Anakagari Maetate",
     "Wakinui Nihonbari",
-    "Waki Honnui",
+    "Loop Tsuke",
+    "Kandome",
+    "Hodoki Waki",
+    "Shirushi Mitsumaki",
     "Iron Waki",
+    "Jinui Waki",
     "Waki Fuse",
+    "Sode Guchi Tome",
+    "Sode Guchi Corong",
+    "Surito",
     "Cuff Tsuke",
+    "Cuff Anakagari",
     "Kazari Cuff",
+    "Bottan Cuff",
     "Mitsumaki",
     "Gazet",
-    "Kandome",
-    "Bottan Tsuke"
+    "Bottan Tsuke",
   ];
 
   // Map nama process ke huruf Jepang (hiragana)
@@ -366,12 +547,17 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
   @override
   void initState() {
     super.initState();
-    loadData();
-    _loadTargets();
+    _setupAutoRefresh(showFullLoading: true);
   }
 
-  Future<void> _loadTargets() async {
-    setState(() => isTargetLoading = true);
+  // Stream subscriptions for auto-refresh
+  StreamSubscription<DocumentSnapshot>? _parentDocSub;
+  StreamSubscription<DocumentSnapshot>? _kumitateDocSub;
+  StreamSubscription<DocumentSnapshot>? _partDocSub;
+  List<StreamSubscription<QuerySnapshot>> _contractSubscriptions = [];
+
+  Future<void> _loadTargets({bool showSpinner = false}) async {
+    if (showSpinner) setState(() => isTargetLoading = true);
     
     final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
     final docRef = FirebaseFirestore.instance.collection('counter_sistem').doc(dateStr);
@@ -552,7 +738,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     } catch (e) {
       print('Error loading targets: $e');
     } finally {
-      setState(() => isTargetLoading = false);
+      if (showSpinner) setState(() => isTargetLoading = false);
     }
   }
 
@@ -1445,10 +1631,34 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               break;
             }
           }
-          
-          if (!hasDataInThisTimeSlot) {
+
+          // Jam reguler terakhir sebelum lembur
+          const String lastRegularTime = "16:00";
+          final List<String> overtimeSlotsRef = ["17:25", "17:55", "18:55", "19:55"];
+          final bool isOvertime = overtimeSlotsRef.contains(time);
+
+          if (isOvertime) {
+            final lastRegularStock = cells["${lastRegularTime}_stock"]?.value;
+
+            // Jika stock 16:00 adalah '-' → process sudah berhenti, jam lembur juga '-'
+            if (lastRegularStock is String && lastRegularStock == '-') {
+              cells["${time}_stock"] = PlutoCell(value: '-');
+              continue;
+            }
+
+            // Jika process tidak ada data di jam lembur ini →
+            // carry forward stock dari jam 16:00 (tidak hitung ulang)
+            if (!hasDataInThisTimeSlot) {
+              cells["${time}_stock"] = PlutoCell(value: lastRegularStock ?? '-');
+              continue;
+            }
+          }
+
+          // Jika tidak ada data DAN bukan jam lembur → '-'
+          if (!hasDataInThisTimeSlot && !isOvertime) {
             cells["${time}_stock"] = PlutoCell(value: '-');
           } else {
+            // Ada data → hitung normal
             if (i == 0) {
               cells["${time}_stock"] = PlutoCell(value: 0);
             } else {
@@ -1462,18 +1672,16 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                     break;
                   }
                 }
-                
                 if (hasPreviousData) {
                   previousCumulative = previousProcess["${time}_cumulative"] ?? 0;
                   break;
                 }
               }
-              
               final currentCumulative = entry["${time}_cumulative"] ?? 0;
-              final pagiStock = (cells['stock_pagi_1']?.value ?? 0) + 
-                              (cells['stock_pagi_2']?.value ?? 0) + 
-                              (cells['stock_pagi_3']?.value ?? 0) + 
-                              (cells['stock_pagi_4']?.value ?? 0) + 
+              final pagiStock = (cells['stock_pagi_1']?.value ?? 0) +
+                              (cells['stock_pagi_2']?.value ?? 0) +
+                              (cells['stock_pagi_3']?.value ?? 0) +
+                              (cells['stock_pagi_4']?.value ?? 0) +
                               (cells['stock_pagi_5']?.value ?? 0);
               cells["stock_pagi_stock"] = PlutoCell(value: pagiStock);
               final stockValue = pagiStock + previousCumulative - currentCumulative;
@@ -1668,11 +1876,13 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     }
   }
 
-  Future<void> loadData() async {
-    setState(() {
-      isLoading = true;
-      noDataAvailable = false;
-    });
+  Future<void> loadData({bool showLoading = false}) async {
+    if (showLoading) {
+      setState(() {
+        isLoading = true;
+        noDataAvailable = false;
+      });
+    }
     
     print('Loading ALL data for Line $selectedLine on ${DateFormat('yyyy-MM-dd').format(selectedDate)}');
 
@@ -1709,6 +1919,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         _buildKumitateColumnsAndRows();
         _buildPartColumnsAndRows();
         _buildProsesTable();
+        _buildPartProsesTable();
         print('ALL Data loaded successfully: ${kumitateData.length} kumitate, ${partData.length} part');
         print('Visible timeslots: $visibleTimeSlots');
       }
@@ -1720,8 +1931,124 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         partData = [];
       });
     } finally {
-      setState(() => isLoading = false);
+      if (showLoading) setState(() => isLoading = false);
     }
+  }
+
+  void _cancelAllSubscriptions() {
+    _parentDocSub?.cancel();
+    _parentDocSub = null;
+    _kumitateDocSub?.cancel();
+    _kumitateDocSub = null;
+    _partDocSub?.cancel();
+    _partDocSub = null;
+    for (var s in _contractSubscriptions) {
+      s.cancel();
+    }
+    _contractSubscriptions.clear();
+  }
+
+  void _setupContractListeners(DocumentReference parentDocRef, List<String> contractCollections) {
+    // cancel previous contract listeners
+    for (var s in _contractSubscriptions) s.cancel();
+    _contractSubscriptions.clear();
+
+    for (final contractName in contractCollections) {
+      final sub = parentDocRef
+          .collection(contractName)
+          .snapshots()
+          .listen((_) {
+        // On any change in contract subcollection, reload merged data
+        loadData();
+      }, onError: (e) {
+        print('Contract listener error for $contractName: $e');
+      });
+
+      _contractSubscriptions.add(sub);
+    }
+  }
+
+  void _setupAutoRefresh({bool showFullLoading = false}) {
+    // Cancel existing
+    _cancelAllSubscriptions();
+
+    if (showFullLoading) {
+      setState(() {
+        isLoading = true;
+      });
+    }
+
+    final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
+    final parentDocRef = FirebaseFirestore.instance.collection('counter_sistem').doc(dateStr);
+
+    // Listen to top-level doc for target/plan changes
+    _parentDocSub = parentDocRef.snapshots().listen((snapshot) async {
+      // Reload targets when parent doc changes (no spinner)
+      await _loadTargets(showSpinner: false);
+      // Also reload all data (no full-screen loader)
+      await loadData();
+    }, onError: (e) {
+      print('Parent doc subscription error: $e');
+    });
+
+    // Listen to Kumitate parent doc to get contract list and set up contract listeners
+    final kumitateDocRef = FirebaseFirestore.instance
+        .collection('counter_sistem')
+        .doc(dateStr)
+        .collection(selectedLine)
+        .doc('Kumitate');
+
+    _kumitateDocSub = kumitateDocRef.snapshots().listen((snapshot) {
+      List<String> contractCollections = [];
+      if (snapshot.exists) {
+        final raw = snapshot.data();
+        if (raw is Map<String, dynamic>) {
+          final kontrak = raw['Kontrak'];
+          if (kontrak is List) {
+            contractCollections = kontrak.map((e) => e.toString()).toList();
+          }
+        }
+      }
+
+      if (contractCollections.isEmpty) contractCollections = ['Process'];
+
+      _setupContractListeners(kumitateDocRef, contractCollections);
+      // ensure UI has up-to-date data
+      loadData();
+    }, onError: (e) {
+      print('Kumitate doc subscription error: $e');
+      _setupContractListeners(kumitateDocRef, ['Process']);
+    });
+
+    // Also listen to Part parent doc to catch changes in part Kontrak list
+    final partDocRef = FirebaseFirestore.instance
+        .collection('counter_sistem')
+        .doc(dateStr)
+        .collection(selectedLine)
+        .doc('Part');
+
+    _partDocSub = partDocRef.snapshots().listen((snapshot) {
+      List<String> contractCollections = [];
+      if (snapshot.exists) {
+        final raw = snapshot.data();
+        if (raw is Map<String, dynamic>) {
+          final kontrak = raw['Kontrak'];
+          if (kontrak is List) {
+            contractCollections = kontrak.map((e) => e.toString()).toList();
+          }
+        }
+      }
+      if (contractCollections.isEmpty) contractCollections = ['Process'];
+
+      // For parts we also want to listen to their contract subcollections
+      _setupContractListeners(partDocRef, contractCollections);
+      loadData();
+    }, onError: (e) {
+      print('Part doc subscription error: $e');
+    });
+
+    // initial load (will also be triggered by snapshots, but do it now)
+    _loadTargets(showSpinner: showFullLoading).then((_) => loadData(showLoading: showFullLoading));
   }
 
   Widget buildChart(String processName, String type) {
@@ -1735,6 +2062,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
   final maxLines = type == 'Part' ? 3 : 5;
 
     final lineBarsData = <LineChartBarData>[];
+    final activeLineNums = <int>[];
     if (type == 'Kumitate' || type == 'Part') {
       for (int lineNum = 1; lineNum <= maxLines; lineNum++) {
         bool hasData = false;
@@ -1745,6 +2073,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           spots.add(FlSpot((t+1).toDouble(), value));
         }
         if (hasData) {
+          activeLineNums.add(lineNum);
           lineBarsData.add(
             LineChartBarData(
               spots: spots,
@@ -1781,9 +2110,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               spacing: 8.0,
               runSpacing: 4.0,
               children: [
-                ...List.generate(lineBarsData.length, (index) {
-                  final colors = [...lineColors];
-                  final labels = ['Line 1', 'Line 2', 'Line 3', 'Line 4', 'Line 5'];
+                ...List.generate(activeLineNums.length, (index) {
+                  final lineNum = activeLineNums[index];
                   return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1791,14 +2119,14 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                         width: 12,
                         height: 12,
                         decoration: BoxDecoration(
-                          color: colors[index],
+                          color: lineColors[lineNum - 1],
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 1),
                         ),
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        labels[index],
+                        'Line $lineNum',
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -2015,13 +2343,12 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           IconButton(
             icon: Icon(Icons.refresh, color: Colors.white),
             tooltip: "Refresh Data",
-            onPressed: () {
+            onPressed: () async {
               setState(() {
-                isLoading = true;
                 isTargetLoading = true;
               });
-              loadData();
-              _loadTargets();
+              await _loadTargets(showSpinner: true);
+              await loadData(showLoading: true);
             },
           ),
           SizedBox(width: 16),
@@ -2078,12 +2405,10 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                                   if (value == null) return;
                                   setState(() {
                                     selectedLine = value;
-                                    isLoading = true;
-                                    isTargetLoading = true;
                                     noDataAvailable = false;
                                   });
-                                  loadData();
-                                  _loadTargets();
+                                  // Reconfigure streams for the new line
+                                  _setupAutoRefresh();
                                 },
                               ),
                             ),
@@ -2128,11 +2453,9 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                                   onChanged: (value) {
                                     setState(() {
                                       selectedLine = value!;
-                                      isLoading = true;
-                                      isTargetLoading = true;
                                     });
-                                    loadData();
-                                    _loadTargets();
+                                    // Reconfigure streams for the new line
+                                    _setupAutoRefresh();
                                   },
                                   icon: Icon(Icons.arrow_drop_down, size: 20, color: Colors.blue.shade600),
                                   style: TextStyle(color: Colors.black),
@@ -2219,10 +2542,11 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _buildTableWidget(
-                              title: 'AKUMULATIF LINE',
+                              title: 'AKUMULATIF LINE (Kumitate)',
                               columns: prosesColumns,
                               rows: prosesRows,
                               columnGroups: prosesColumnGroups,
+                              dropdownLabel: 'Pilih Proses Kumitate: ',
                               processDropdown: DropdownButton<String>(
                                 value: selectedProcessName,
                                 items: processNames.map((name) => DropdownMenuItem(
@@ -2245,6 +2569,41 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                             ),
                           ],
                         ),
+                      
+                      if (partProcessNames.isNotEmpty) ...[
+                        SizedBox(height: 30),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildTableWidget(
+                              title: 'AKUMULATIF LINE (Part)',
+                              columns: partProsesColumns,
+                              rows: partProsesRows,
+                              columnGroups: partProsesColumnGroups,
+                              dropdownLabel: 'Pilih Proses Part: ',
+                              processDropdown: DropdownButton<String>(
+                                value: selectedPartProcessName,
+                                items: partProcessNames.map((name) => DropdownMenuItem(
+                                  value: name,
+                                  child: Text(
+                                    name,
+                                    style: TextStyle(fontSize: 12),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                )).toList(),
+                                onChanged: (value) {
+                                  if (value != null && value != selectedPartProcessName) {
+                                    setState(() {
+                                      selectedPartProcessName = value;
+                                      _buildPartProsesTable();
+                                    });
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -2262,11 +2621,9 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     if (picked != null && picked != selectedDate) {
       setState(() {
         selectedDate = picked;
-        isLoading = true;
-        isTargetLoading = true;
       });
-      await loadData();
-      await _loadTargets();
+      // Reconfigure streams for the new date (will trigger loading)
+      _setupAutoRefresh();
     }
   }
 
@@ -2276,6 +2633,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     required List<PlutoRow> rows,
     required List<PlutoColumnGroup> columnGroups,
     Widget? processDropdown,
+    String? dropdownLabel,
   }) {
     const rowHeight = 30.0;
     const headerHeight = 40.0;
@@ -2310,7 +2668,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
-                  Text('Pilih Proses: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(dropdownLabel ?? 'Pilih Proses: ', style: TextStyle(fontWeight: FontWeight.bold)),
                   Container(
                     margin: const EdgeInsets.only(left: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -2344,7 +2702,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                 borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
               ),
               child: PlutoGrid(
-                key: ValueKey('${title}_${selectedDate}_${selectedLine}_${title == 'AKUMULATIF LINE' ? (selectedProcessName ?? '') : ''}'),
+                key: ValueKey('${title}_${selectedDate}_${selectedLine}_${title == 'AKUMULATIF LINE (Kumitate)' ? (selectedProcessName ?? '') : ''}_${title == 'AKUMULATIF LINE (Part)' ? (selectedPartProcessName ?? '') : ''}'),
                 columns: columns,
                 rows: rows,
                 columnGroups: columnGroups,
@@ -2376,5 +2734,11 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _cancelAllSubscriptions();
+    super.dispose();
   }
 }

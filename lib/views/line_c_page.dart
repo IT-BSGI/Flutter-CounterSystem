@@ -31,18 +31,16 @@ class _LineCPageState extends State<LineCPage> {
   String _countdown = '';
   bool _shouldBlink = false;
   final List<TimeOfDay> _hourlyIntervals = [
-    TimeOfDay(hour: 7, minute: 30),
     TimeOfDay(hour: 8, minute: 30),
     TimeOfDay(hour: 9, minute: 30),
     TimeOfDay(hour: 10, minute: 30),
     TimeOfDay(hour: 11, minute: 30),
-  TimeOfDay(hour: 12, minute: 30),
-    TimeOfDay(hour: 14, minute: 30),
-    TimeOfDay(hour: 15, minute: 30),
-    TimeOfDay(hour: 16, minute: 30),
-    TimeOfDay(hour: 17, minute: 55),
-    TimeOfDay(hour: 18, minute: 55),
-    TimeOfDay(hour: 19, minute: 55),
+    TimeOfDay(hour: 12, minute: 0),
+    TimeOfDay(hour: 12, minute: 30),
+    TimeOfDay(hour: 13, minute: 0),
+    TimeOfDay(hour: 14, minute: 0),
+    TimeOfDay(hour: 15, minute: 0),
+    TimeOfDay(hour: 16, minute: 0),
   ];
 
   // Variables for real-time target calculation
@@ -52,7 +50,7 @@ class _LineCPageState extends State<LineCPage> {
 
   // Work hours configuration
   final TimeOfDay _startWorkTime = TimeOfDay(hour: 7, minute: 30);
-  final TimeOfDay _endWorkTime = TimeOfDay(hour: 16, minute: 30);
+  final TimeOfDay _endWorkTime = TimeOfDay(hour: 16, minute: 0);
 
   @override
   void initState() {
@@ -211,7 +209,7 @@ class _LineCPageState extends State<LineCPage> {
 
   double _getElapsedSeconds(DateTime now) {
     final startTime = DateTime(now.year, now.month, now.day, _startWorkTime.hour, _startWorkTime.minute);
-  final breakStart = DateTime(now.year, now.month, now.day, 11, 30);
+  final breakStart = DateTime(now.year, now.month, now.day, 12, 0);
   final breakEnd = DateTime(now.year, now.month, now.day, 12, 30);
     
     double elapsedSeconds = now.difference(startTime).inSeconds.toDouble();
@@ -294,7 +292,7 @@ class _LineCPageState extends State<LineCPage> {
   }
 
   double _calculateLinearTarget(double elapsedSeconds) {
-    // Total work seconds from 07:30 to 16:30 with break (8 hours = 28800 seconds)
+    // Total work seconds from 07:30 to 16:00 with 30min break (8 hours = 28800 seconds)
     const totalWorkSeconds = 28800.0;
     
     if (elapsedSeconds >= totalWorkSeconds) {

@@ -171,7 +171,7 @@ class _TargetPageState extends State<TargetPage> {
               final overtimeData = m['overtime'];
               if (overtimeData is Map) {
                 _showOvertime[line] = true;
-                _selectedOvertime[line]!['start'] = overtimeData['start'] ?? '16:55';
+                _selectedOvertime[line]!['start'] = overtimeData['start'] ?? '16:25';
                 _selectedOvertime[line]!['end'] = overtimeData['end'] ?? '';
                 _overtimeTimeControllers[line]!.text = overtimeData['time_perpcs']?.toString() ?? '';
                 _overtimeQtyControllers[line]!.text = overtimeData['quantity']?.toString() ?? '';
@@ -188,7 +188,7 @@ class _TargetPageState extends State<TargetPage> {
             }
             _lineHasData[line] = false;
             _showOvertime[line] = false;
-            _selectedOvertime[line] = {'start': '16:55', 'end': ''};
+            _selectedOvertime[line] = {'start': '16:25', 'end': ''};
             _overtimeTimeControllers[line]!.clear();
             _overtimeQtyControllers[line]!.clear();
           }
@@ -202,7 +202,7 @@ class _TargetPageState extends State<TargetPage> {
       for (var line in ['A', 'B', 'C', 'D', 'E']) {
         _lineHasData[line] = false;
         _showOvertime[line] = false;
-        _selectedOvertime[line] = {'start': '16:55', 'end': ''};
+        _selectedOvertime[line] = {'start': '16:25', 'end': ''};
         _overtimeTimeControllers[line]!.clear();
         _overtimeQtyControllers[line]!.clear();
       }
@@ -253,7 +253,7 @@ class _TargetPageState extends State<TargetPage> {
     setState(() {
       _showOvertime[line] = !_showOvertime[line]!;
       if (!_showOvertime[line]!) {
-        _selectedOvertime[line] = {'start': '16:55', 'end': ''};
+        _selectedOvertime[line] = {'start': '16:25', 'end': ''};
         _overtimeTimeControllers[line]!.clear();
         _overtimeQtyControllers[line]!.clear();
       }
@@ -263,7 +263,7 @@ class _TargetPageState extends State<TargetPage> {
   // Select overtime duration
   void _selectOvertimeDuration(String line, String endTime) {
     setState(() {
-      _selectedOvertime[line]!['start'] = '16:55';
+      _selectedOvertime[line]!['start'] = '16:25';
       _selectedOvertime[line]!['end'] = endTime;
       _calculateOvertimeQuantity(line);
     });
@@ -282,26 +282,17 @@ class _TargetPageState extends State<TargetPage> {
       return;
     }
 
-    // Calculate duration in seconds based on selection
+    // Calculate duration in seconds based on selection (start: 16:25)
     int overtimeSeconds = 0;
     switch (_selectedOvertime[line]!['end']) {
-      case '17:25':
+      case '16:55':
         overtimeSeconds = 30 * 60; // 30 minutes
         break;
-      case '17:55':
+      case '17:25':
         overtimeSeconds = 60 * 60; // 60 minutes
         break;
-      case '18:25':
+      case '17:55':
         overtimeSeconds = 90 * 60; // 90 minutes
-        break;
-      case '18:55':
-        overtimeSeconds = 120 * 60; // 120 minutes
-        break;
-      case '19:25':
-        overtimeSeconds = 150 * 60; // 150 minutes
-        break;
-      case '19:55':
-        overtimeSeconds = 180 * 60; // 180 minutes
         break;
     }
 
@@ -334,10 +325,10 @@ class _TargetPageState extends State<TargetPage> {
     Map<String, Map<String, dynamic>> detail = {};
     int total = 0;
     
-    // helper: total productive seconds (07:30-11:30, break 1h, 12:30-16:30)
+    // helper: total productive seconds (07:30-12:00, break 30min, 12:30-16:00 = 8 jam)
     int totalProductiveSeconds() {
-      final morning = Duration(hours: 11, minutes: 30) - Duration(hours: 7, minutes: 30); // 4:00
-      final afternoon = Duration(hours: 16, minutes: 30) - Duration(hours: 12, minutes: 30); // 4:00
+      final morning = Duration(hours: 12, minutes: 0) - Duration(hours: 7, minutes: 30); // 4:30
+      final afternoon = Duration(hours: 16, minutes: 0) - Duration(hours: 12, minutes: 30); // 3:30
       return (morning + afternoon).inSeconds; // 28800
     }
 
@@ -699,12 +690,9 @@ class _TargetPageState extends State<TargetPage> {
 
     // Overtime duration options
     final overtimeOptions = [
+      '16:55',
       '17:25',
       '17:55',
-      '18:25',
-      '18:55',
-      '19:25',
-      '19:55',
     ];
 
     return Card(
@@ -910,7 +898,7 @@ class _TargetPageState extends State<TargetPage> {
                       runSpacing: 8,
                       children: overtimeOptions.map((option) {
                         return FilterChip(
-                          label: Text('16:55 - $option'),
+                          label: Text('16:25 - $option'),
                           selected: selectedOvertime['end'] == option,
                           onSelected: (_overtimeSaved[line] ?? false) ? null : (selected) { if (selected) _selectOvertimeDuration(line, option); },
                           selectedColor: Colors.orange.shade300,

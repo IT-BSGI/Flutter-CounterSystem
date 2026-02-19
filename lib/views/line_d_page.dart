@@ -31,18 +31,16 @@ class _LineDPageState extends State<LineDPage> {
   String _countdown = '';
   bool _shouldBlink = false;
   final List<TimeOfDay> _hourlyIntervals = [
-    TimeOfDay(hour: 7, minute: 30),
     TimeOfDay(hour: 8, minute: 30),
     TimeOfDay(hour: 9, minute: 30),
     TimeOfDay(hour: 10, minute: 30),
     TimeOfDay(hour: 11, minute: 30),
-  TimeOfDay(hour: 12, minute: 30),
-    TimeOfDay(hour: 14, minute: 30),
-    TimeOfDay(hour: 15, minute: 30),
-    TimeOfDay(hour: 16, minute: 30),
-    TimeOfDay(hour: 17, minute: 55),
-    TimeOfDay(hour: 18, minute: 55),
-    TimeOfDay(hour: 19, minute: 55),
+    TimeOfDay(hour: 12, minute: 0),
+    TimeOfDay(hour: 12, minute: 30),
+    TimeOfDay(hour: 13, minute: 0),
+    TimeOfDay(hour: 14, minute: 0),
+    TimeOfDay(hour: 15, minute: 0),
+    TimeOfDay(hour: 16, minute: 0),
   ];
 
   // Variables for real-time target calculation
@@ -52,7 +50,7 @@ class _LineDPageState extends State<LineDPage> {
 
   // Work hours configuration
   final TimeOfDay _startWorkTime = TimeOfDay(hour: 7, minute: 30);
-  final TimeOfDay _endWorkTime = TimeOfDay(hour: 16, minute: 30);
+  final TimeOfDay _endWorkTime = TimeOfDay(hour: 16, minute: 0);
 
   @override
   void initState() {
@@ -129,7 +127,7 @@ class _LineDPageState extends State<LineDPage> {
   }
 
   void _processTargetMap(Map<String, dynamic>? targetMap) {
-    print('Processing target map for Line C');
+    print('Processing target map for Line D');
     
     _styles = [];
     _overtimeData = null;
@@ -211,8 +209,8 @@ class _LineDPageState extends State<LineDPage> {
 
   double _getElapsedSeconds(DateTime now) {
     final startTime = DateTime(now.year, now.month, now.day, _startWorkTime.hour, _startWorkTime.minute);
-  final breakStart = DateTime(now.year, now.month, now.day, 11, 30);
-  final breakEnd = DateTime(now.year, now.month, now.day, 12, 30);
+    final breakStart = DateTime(now.year, now.month, now.day, 12, 0);
+    final breakEnd = DateTime(now.year, now.month, now.day, 12, 30);
     
     double elapsedSeconds = now.difference(startTime).inSeconds.toDouble();
     
@@ -294,7 +292,7 @@ class _LineDPageState extends State<LineDPage> {
   }
 
   double _calculateLinearTarget(double elapsedSeconds) {
-    // Total work seconds from 07:30 to 16:30 with break (8 hours = 28800 seconds)
+    // Total work seconds from 07:30 to 16:00 with 30min break (8 hours = 28800 seconds)
     const totalWorkSeconds = 28800.0;
     
     if (elapsedSeconds >= totalWorkSeconds) {
@@ -307,7 +305,7 @@ class _LineDPageState extends State<LineDPage> {
 
   void _setupStreams() {
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.date);
-    print('Setting up streams for date: $dateStr, Line C');
+    print('Setting up streams for date: $dateStr, Line D');
     
     _planSubscription = _firestore.collection('counter_sistem')
       .doc(dateStr)
@@ -315,15 +313,15 @@ class _LineDPageState extends State<LineDPage> {
       .listen((DocumentSnapshot snapshot) {
         if (snapshot.exists) {
           final data = snapshot.data() as Map<String, dynamic>?;
-          final plan = data?['target_C'] as int? ?? 0;
+          final plan = data?['target_D'] as int? ?? 0;
           print('Plan data received: $plan');
           
           setState(() {
             _plan = plan;
           });
           
-          // Process target_map_C for real-time calculation
-          final targetMap = data?['target_map_C'] as Map<String, dynamic>?;
+          // Process target_map_D for real-time calculation
+          final targetMap = data?['target_map_D'] as Map<String, dynamic>?;
           print('Target map received: $targetMap');
           _processTargetMap(targetMap);
         } else {
@@ -344,7 +342,7 @@ class _LineDPageState extends State<LineDPage> {
     // Setup Kumitate document stream to get contract list
     final kumitateDocRef = _firestore.collection('counter_sistem')
       .doc(dateStr)
-      .collection('C')
+      .collection('D')
       .doc('Kumitate');
 
     _kumitateSubscription = kumitateDocRef.snapshots().listen((DocumentSnapshot snapshot) {
@@ -361,7 +359,7 @@ class _LineDPageState extends State<LineDPage> {
           contractCollections = ['Process'];
         }
 
-        print('Contract collections for Line C: $contractCollections');
+        print('Contract collections for Line D: $contractCollections');
         _setupContractStreams(kumitateDocRef, contractCollections);
       } else {
         // If Kumitate document doesn't exist, fallback to legacy structure
@@ -373,7 +371,7 @@ class _LineDPageState extends State<LineDPage> {
       // Fallback to legacy structure on error
       final kumitateDocRef = _firestore.collection('counter_sistem')
         .doc(dateStr)
-        .collection('C')
+        .collection('D')
         .doc('Kumitate');
       _setupContractStreams(kumitateDocRef, ['Process']);
     });
@@ -481,7 +479,7 @@ class _LineDPageState extends State<LineDPage> {
             ),
             
             Text(
-              'LINE C',
+              'LINE D',
               style: TextStyle(
                 fontSize: screenWidth < 600 ? 50 : 55, 
                 color: Colors.white,

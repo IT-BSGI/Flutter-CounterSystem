@@ -13,11 +13,18 @@ class CounterTableScreen extends StatefulWidget {
 }
 
 class _CounterTableScreenState extends State<CounterTableScreen> {
-  // Untuk tabel Proses (akumulatif 12345 per timeslot)
+  // Untuk tabel Proses Kumitate (akumulatif 12345 per timeslot)
   List<PlutoColumn> prosesColumns = [];
   List<PlutoRow> prosesRows = [];
   String? selectedProcessName;
   List<String> processNames = [];
+
+  // Untuk tabel Proses Part (akumulatif 123 per timeslot)
+  List<PlutoColumn> partProsesColumns = [];
+  List<PlutoRow> partProsesRows = [];
+  String? selectedPartProcessName;
+  List<String> partProcessNames = [];
+  List<PlutoColumnGroup> partProsesColumnGroups = [];
 
   // Build tabel Proses: timeslot, 1,2,3,4,5, total akumulatif per timeslot
   void _buildProsesTable() {
@@ -151,6 +158,155 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     this.prosesRows = prosesRows;
     this.prosesColumnGroups = prosesColumnGroups;
   }
+
+  // Build tabel Proses Part: timeslot, per line (1-3) Jam & Ak
+  void _buildPartProsesTable() {
+    partProsesColumns = [
+      PlutoColumn(
+        title: "TIME",
+        field: "time_slot",
+        type: PlutoColumnType.text(),
+        width: 100,
+        titleTextAlign: PlutoColumnTextAlign.center,
+        backgroundColor: Colors.blue.shade300,
+        enableColumnDrag: false,
+        enableContextMenu: false,
+        enableSorting: false,
+        enableEditingMode: false,
+        enableDropToResize: false,
+        renderer: (ctx) {
+          return Container(
+            alignment: Alignment.center,
+            child: Text(
+              ctx.cell.value.toString(),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+          );
+        },
+      ),
+      for (int i = 1; i <= 3; i++) ...[
+        PlutoColumn(
+          title: "Jam",
+          field: "line_${i}_jam",
+          type: PlutoColumnType.number(),
+          width: 60,
+          titleTextAlign: PlutoColumnTextAlign.center,
+          textAlign: PlutoColumnTextAlign.center,
+          backgroundColor: Colors.blue.shade200,
+          enableColumnDrag: false,
+          enableContextMenu: false,
+          enableSorting: false,
+          enableEditingMode: false,
+          enableDropToResize: false,
+          renderer: (ctx) {
+            return Container(
+              alignment: Alignment.center,
+              child: Text(
+                ctx.cell.value.toString(),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            );
+          },
+        ),
+        PlutoColumn(
+          title: "Ak",
+          field: "line_${i}_ak",
+          type: PlutoColumnType.number(),
+          width: 60,
+          titleTextAlign: PlutoColumnTextAlign.center,
+          textAlign: PlutoColumnTextAlign.center,
+          backgroundColor: Colors.blue.shade200,
+          enableColumnDrag: false,
+          enableContextMenu: false,
+          enableSorting: false,
+          enableEditingMode: false,
+          enableDropToResize: false,
+          renderer: (ctx) {
+            return Container(
+              alignment: Alignment.center,
+              child: Text(
+                ctx.cell.value.toString(),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            );
+          },
+        ),
+      ],
+    ];
+
+    partProsesColumnGroups = [
+      for (int i = 1; i <= 3; i++)
+        PlutoColumnGroup(
+          title: '$i',
+          backgroundColor: Colors.blue.shade300,
+          fields: ['line_${i}_jam', 'line_${i}_ak'],
+        ),
+    ];
+
+    partProcessNames = partData
+        .map((e) => e["process_name"]?.toString() ?? "")
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    partProcessNames.sort((a, b) {
+      final aIndex = partProcessOrder.indexOf(a);
+      final bIndex = partProcessOrder.indexOf(b);
+      if (aIndex == -1) return 1;
+      if (bIndex == -1) return -1;
+      return aIndex.compareTo(bIndex);
+    });
+
+    if (selectedPartProcessName == null || !partProcessNames.contains(selectedPartProcessName)) {
+      selectedPartProcessName = partProcessNames.isNotEmpty ? partProcessNames.first : null;
+    }
+
+    final partProses = partData.firstWhere(
+      (e) => e["process_name"]?.toString() == selectedPartProcessName,
+      orElse: () => {},
+    );
+
+    // Hanya tampilkan timeslot yang ada data line 1-3 > 0
+    final visibleTimeSlotsPartProses = visibleTimeSlots.where((time) {
+      for (int i = 1; i <= 3; i++) {
+        final val = partProses["${time}_$i"];
+        if (val != null && val != 0 && val.toString() != '0') return true;
+      }
+      return false;
+    }).toList();
+
+    final isDividedByTwo = dividedByTwoProcesses.contains(selectedPartProcessName);
+
+    partProsesRows = [];
+    for (final time in visibleTimeSlotsPartProses) {
+      final cells = <String, PlutoCell>{};
+      cells["time_slot"] = PlutoCell(value: time);
+
+      for (int i = 1; i <= 3; i++) {
+        final jamRaw = partProses["${time}_$i"];
+        int jamInt = jamRaw is int ? jamRaw : int.tryParse(jamRaw?.toString() ?? '') ?? 0;
+        if (isDividedByTwo) jamInt = (jamInt / 2).floor();
+
+        int akumulatif = 0;
+        for (final t in visibleTimeSlotsPartProses) {
+          final val = partProses["${t}_$i"];
+          final valInt = val is int ? val : int.tryParse(val?.toString() ?? '') ?? 0;
+          akumulatif += valInt;
+          if (t == time) break;
+        }
+        if (isDividedByTwo) akumulatif = (akumulatif / 2).floor();
+
+        cells["line_${i}_jam"] = PlutoCell(value: jamInt);
+        cells["line_${i}_ak"] = PlutoCell(value: akumulatif);
+      }
+
+      partProsesRows.add(PlutoRow(cells: cells));
+    }
+
+    this.partProsesColumns = partProsesColumns;
+    this.partProsesRows = partProsesRows;
+    this.partProsesColumnGroups = partProsesColumnGroups;
+  }
+
   List<PlutoColumnGroup> prosesColumnGroups = [];
   bool get isEditableNow {
     final now = DateTime.now();
@@ -205,8 +361,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   PlutoGridStateManager? _partStateManager;
 
   final List<String> timeSlots = [
-    "08:30", "09:30", "10:30", "11:30", "13:30", 
-    "14:30", "15:30", "16:30", "17:55", "18:55", "19:55",
+    "08:30", "09:30", "10:30", "11:30", "12:00",
+    "13:00", "14:00", "15:00", "16:00", "17:25", "17:55",
   ];
     List<String> visibleTimeSlots = [];
 
@@ -235,47 +391,47 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     "11:00": "11:30",
     "11:15": "11:30",
 
-    "11:30": "13:30",
-    "11:45": "13:30",
-    "12:00": "13:30",
-    "12:15": "13:30",
-    "12:30": "13:30",
-    "12:45": "13:30",
-    "13:00": "13:30",
-    "13:15": "13:30",
+    "11:30": "12:00",
+    "11:45": "12:00",
+    "12:00": "12:00",
 
-    "13:30": "14:30",
-    "13:45": "14:30",
-    "14:00": "14:30",
-    "14:15": "14:30",
-    
-    "14:30": "15:30",
-    "14:45": "15:30",
-    "15:00": "15:30",
-    "15:15": "15:30",
+    "12:15": "13:00",
+    "12:30": "13:00",
+    "12:45": "13:00",
 
-    "15:30": "16:30", 
-    "15:45": "16:30",
-    "16:00": "16:30",
-    "16:15": "16:30",
-    "16:30": "16:30",
-    
-    "16:45": "17:55",
-    "17:00": "17:55",
-    "17:15": "17:55",
-    "17:30": "17:55",
+    "13:00": "14:00",
+    "13:15": "14:00",
+    "13:30": "14:00",
+    "13:45": "14:00",
+
+    "14:00": "15:00",
+    "14:15": "15:00", 
+    "14:30": "15:00",
+    "14:45": "15:00",
+
+    "15:00": "16:00",
+    "15:15": "16:00",
+    "15:30": "16:00", 
+    "15:45": "16:00",
+    "16:00": "16:00",
+
+    "16:15": "17:25",
+    "16:30": "17:25", 
+    "16:45": "17:25",
+    "17:00": "17:25",
+    "17:15": "17:25",
+    "17:30": "17:25",
+
     "17:45": "17:55",
-
-    "18:00": "18:55",
-    "18:15": "18:55",
-    "18:30": "18:55",
-    "18:45": "18:55",
-
-    "19:00": "19:55",
-    "19:15": "19:55",
-    "19:30": "19:55",
-    "19:45": "19:55",
-    "20:00": "19:55",
+    "18:00": "17:55",
+    "18:15": "17:55",
+    "18:30": "17:55",
+    "18:45": "17:55",
+    "19:00": "17:55",
+    "19:15": "17:55",
+    "19:30": "17:55",
+    "19:45": "17:55",
+    "20:00": "17:55",
   };
 
   final List<String> partProcessOrder = [
@@ -1654,6 +1810,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         _buildKumitateColumnsAndRows();
         _buildPartColumnsAndRows();
         _buildProsesTable();
+        _buildPartProsesTable();
         print('Data loaded successfully: ${kumitateData.length} kumitate, ${partData.length} part');
       }
     } catch (e) {
@@ -1735,6 +1892,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   final maxLines = type == 'Part' ? 3 : 5;
 
     final lineBarsData = <LineChartBarData>[];
+    final activeLineNums = <int>[];
     if (type == 'Kumitate' || type == 'Part') {
       // Untuk Kumitate dan Part, tampilkan data per nomor line saja (bukan akumulatif)
       for (int lineNum = 1; lineNum <= maxLines; lineNum++) {
@@ -1746,6 +1904,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           spots.add(FlSpot((t+1).toDouble(), value));
         }
         if (hasData) {
+          activeLineNums.add(lineNum);
           lineBarsData.add(
             LineChartBarData(
               spots: spots,
@@ -1782,13 +1941,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               spacing: 8.0,
               runSpacing: 4.0,
               children: [
-                ...List.generate(lineBarsData.length, (index) {
-                  final colors = [
-                    ...lineColors
-                  ];
-                  final labels = [
-                    'Line 1', 'Line 2', 'Line 3', 'Line 4', 'Line 5'
-                  ];
+                ...List.generate(activeLineNums.length, (index) {
+                  final lineNum = activeLineNums[index];
                   return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1796,14 +1950,14 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                         width: 12,
                         height: 12,
                         decoration: BoxDecoration(
-                          color: colors[index],
+                          color: lineColors[lineNum - 1],
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 1),
                         ),
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        labels[index],
+                        'Line $lineNum',
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -2048,10 +2202,12 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           '2': row.cells['stock_pagi_2']?.value as int? ?? 0,
           '3': row.cells['stock_pagi_3']?.value as int? ?? 0,
           '4': row.cells['stock_pagi_4']?.value as int? ?? 0,
+          '5': row.cells['stock_pagi_5']?.value as int? ?? 0,
           'stock': (row.cells['stock_pagi_1']?.value as int? ?? 0) +
                   (row.cells['stock_pagi_2']?.value as int? ?? 0) +
                   (row.cells['stock_pagi_3']?.value as int? ?? 0) +
-                  (row.cells['stock_pagi_4']?.value as int? ?? 0),
+                  (row.cells['stock_pagi_4']?.value as int? ?? 0) +
+                  (row.cells['stock_pagi_5']?.value as int? ?? 0),
         };
 
         // PART: logika split part1,part2 berlaku untuk semua baris
@@ -2426,10 +2582,11 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _buildTableWidget(
-                              title: 'AKUMULATIF LINE',
+                              title: 'AKUMULATIF LINE (Kumitate)',
                               columns: prosesColumns,
                               rows: prosesRows,
                               columnGroups: prosesColumnGroups,
+                              dropdownLabel: 'Pilih Proses Kumitate: ',
                               processDropdown: DropdownButton<String>(
                                 value: selectedProcessName,
                                 items: processNames.map((name) => DropdownMenuItem(
@@ -2452,6 +2609,41 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                             ),
                           ],
                         ),
+
+                      if (partProcessNames.isNotEmpty) ...[
+                        SizedBox(height: 30),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildTableWidget(
+                              title: 'AKUMULATIF LINE (Part)',
+                              columns: partProsesColumns,
+                              rows: partProsesRows,
+                              columnGroups: partProsesColumnGroups,
+                              dropdownLabel: 'Pilih Proses Part: ',
+                              processDropdown: DropdownButton<String>(
+                                value: selectedPartProcessName,
+                                items: partProcessNames.map((name) => DropdownMenuItem(
+                                  value: name,
+                                  child: Text(
+                                    name,
+                                    style: TextStyle(fontSize: 12),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                )).toList(),
+                                onChanged: (value) {
+                                  if (value != null && value != selectedPartProcessName) {
+                                    setState(() {
+                                      selectedPartProcessName = value;
+                                      _buildPartProsesTable();
+                                    });
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -2464,6 +2656,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     required List<PlutoRow> rows,
     required List<PlutoColumnGroup> columnGroups,
     Widget? processDropdown,
+    String? dropdownLabel,
   }) {
   const rowHeight = 30.0;
   const headerHeight = 40.0;
@@ -2500,7 +2693,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
-                  Text('Pilih Proses: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(dropdownLabel ?? 'Pilih Proses: ', style: TextStyle(fontWeight: FontWeight.bold)),
                   Container(
                     margin: const EdgeInsets.only(left: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -2534,7 +2727,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                 borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
               ),
               child: PlutoGrid(
-                key: ValueKey('${title}_${selectedDate}_${selectedLine}_${selectedContract}_${title == 'AKUMULATIF LINE' ? (selectedProcessName ?? '') : ''}'),
+                key: ValueKey('${title}_${selectedDate}_${selectedLine}_${selectedContract}_${title == 'AKUMULATIF LINE (Kumitate)' ? (selectedProcessName ?? '') : ''}_${title == 'AKUMULATIF LINE (Part)' ? (selectedPartProcessName ?? '') : ''}'),
                 columns: columns,
                 rows: rows,
                 columnGroups: columnGroups,
@@ -2591,7 +2784,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                         final pagi2 = event.row.cells['stock_pagi_2']?.value as int? ?? 0;
                         final pagi3 = event.row.cells['stock_pagi_3']?.value as int? ?? 0;
                         final pagi4 = event.row.cells['stock_pagi_4']?.value as int? ?? 0;
-                        final pagiStock = pagi1 + pagi2 + pagi3 + pagi4;
+                        final pagi5 = event.row.cells['stock_pagi_5']?.value as int? ?? 0;
+                        final pagiStock = pagi1 + pagi2 + pagi3 + pagi4 + pagi5;
                         stateManager.changeCellValue(
                           event.row.cells['stock_pagi_stock']!,
                           pagiStock,

@@ -22,12 +22,19 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   DateTime selectedDate = DateTime.now();
   ScrollController _scrollController = ScrollController();
   List<String> _allContracts = [];
+  
+  // State untuk mode (Kumitate/Part)
+  String _currentMode = 'Kumitate'; // Default: Kumitate
 
   final List<String> lines = ["A", "B", "C", "D", "E"];
   final Map<String, String> lineTitles = {
     "A": "Line A", "B": "Line B", "C": "Line C", 
-    "D": "Line D", "E": "Line E",
+    "D": "Line D", "E": "Line E", 
   };
+
+  // Map untuk menyimpan controller dan focus node tiap input sequence
+  Map<String, TextEditingController> _sequenceControllers = {};
+  Map<String, FocusNode> _sequenceFocusNodes = {};
 
   // Fungsi untuk mengubah underscore menjadi spasi
   String _formatProcessName(String processName) {
@@ -57,74 +64,45 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
       } catch (_) {}
     }
     
+    // Dispose semua sequence controllers dan focus nodes
+    for (var controller in _sequenceControllers.values) {
+      controller.dispose();
+    }
+    for (var focusNode in _sequenceFocusNodes.values) {
+      focusNode.dispose();
+    }
+    
     try {
       _scrollController.dispose();
     } catch (_) {}
     super.dispose();
   }
 
-  // Fungsi untuk mendapatkan document reference
-  DocumentReference _getDocRef(String line, String formattedDate, String mode) {
+  // Fungsi untuk mendapatkan document reference berdasarkan mode
+  DocumentReference _getDocRef(String line, String formattedDate) {
     return _firestore
         .collection('counter_sistem')
         .doc(formattedDate)
         .collection(line)
-        .doc(mode);
+        .doc(_currentMode);
   }
 
   Future<void> fetchMasterContracts() async {
     try {
-      // Mengambil kontrak dari struktur baru: basic_data/data_contracts/contracts/
-      QuerySnapshot contractsSnapshot = 
-          await _firestore
-              .collection('basic_data')
-              .doc('data_contracts')
-              .collection('contracts')
-              .get();
+      DocumentSnapshot contractsSnapshot = 
+          await _firestore.collection('basic_data').doc('contracts').get();
       
-      if (contractsSnapshot.docs.isNotEmpty) {
+      if (contractsSnapshot.exists) {
+        Map<String, dynamic> contractsData = _convertToStringDynamicMap(contractsSnapshot.data());
         setState(() {
-          _allContracts = contractsSnapshot.docs.map((doc) => doc.id).toList()..sort();
+          _allContracts = contractsData.keys.where((key) => key.isNotEmpty).toList();
+          _allContracts.sort();
         });
-      } else {
-        // Fallback ke struktur lama jika struktur baru tidak ada
-        DocumentSnapshot oldContractsSnapshot = 
-            await _firestore.collection('basic_data').doc('contracts').get();
-        
-        if (oldContractsSnapshot.exists) {
-          Map<String, dynamic> contractsData = _convertToStringDynamicMap(oldContractsSnapshot.data());
-          setState(() {
-            _allContracts = contractsData.keys.where((key) => key.isNotEmpty).toList()..sort();
-          });
-        } else {
-          setState(() {
-            _allContracts = [];
-          });
-        }
       }
       
       await fetchProcessLines();
     } catch (e) {
-      // Fallback ke struktur lama jika error
-      try {
-        DocumentSnapshot oldContractsSnapshot = 
-            await _firestore.collection('basic_data').doc('contracts').get();
-        
-        if (oldContractsSnapshot.exists) {
-          Map<String, dynamic> contractsData = _convertToStringDynamicMap(oldContractsSnapshot.data());
-          setState(() {
-            _allContracts = contractsData.keys.where((key) => key.isNotEmpty).toList()..sort();
-          });
-        } else {
-          setState(() {
-            _allContracts = [];
-          });
-        }
-        
-        await fetchProcessLines();
-      } catch (fallbackError) {
-        await fetchProcessLines();
-      }
+      await fetchProcessLines();
     }
   }
 
@@ -161,16 +139,15 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
       }
       String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
 
-      for (String line in lines) {
-        String lineKey = "process_line_$line";
-        if (!processData.containsKey(lineKey) || processData[lineKey] == null) {
-          continue;
-        }
+      // Ambil process_kumitate untuk semua line
+      List<String> kumitateProcesses = [];
+      if (processData.containsKey('process_kumitate') && processData['process_kumitate'] is List) {
+        List<dynamic> processesDynamic = processData['process_kumitate'];
+        kumitateProcesses = processesDynamic.map((item) => item.toString()).toList();
+      }
 
-        List<dynamic> processesDynamic = processData[lineKey] is List ? processData[lineKey] : [];
-        List<String> processes = processesDynamic.map((item) => item.toString()).toList();
-        
-        _baseProcesses[line] = processes;
+      for (String line in lines) {
+        _baseProcesses[line] = kumitateProcesses;
         await _fetchContractsFromCounterSistem(line, formattedDate);
         await _fetchContractProcesses(line, formattedDate);
       }
@@ -186,19 +163,16 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
   Future<void> _fetchContractsFromCounterSistem(String line, String formattedDate) async {
     try {
-      // Ambil kontrak dari kedua mode (Kumitate dan Part)
-      DocumentReference kumitateDocRef = _getDocRef(line, formattedDate, 'Kumitate');
-      DocumentReference partDocRef = _getDocRef(line, formattedDate, 'Part');
+      DocumentReference docRef = _getDocRef(line, formattedDate);
 
-      DocumentSnapshot kumitateSnapshot = await kumitateDocRef.get();
-      DocumentSnapshot partSnapshot = await partDocRef.get();
+      DocumentSnapshot snapshot = await docRef.get();
       
       List<String> existingContracts = [];
       
-      // Cek dari dokumen Kumitate
-      if (kumitateSnapshot.exists) {
-        Map<String, dynamic> data = _convertToStringDynamicMap(kumitateSnapshot.data());
+      if (snapshot.exists) {
+        Map<String, dynamic> data = _convertToStringDynamicMap(snapshot.data());
         
+        // STRUKTUR BARU: Cek field 'Kontrak' yang berisi array of contracts
         if (data.containsKey('Kontrak') && data['Kontrak'] is List) {
           List<dynamic> contractsArray = data['Kontrak'];
           for (var contract in contractsArray) {
@@ -207,6 +181,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
             }
           }
         } else {
+          // Struktur lama: ambil dari keys
           data.forEach((key, value) {
             if (key != 'created' && key != 'updated' && key != 'contract_name' && 
                 key.isNotEmpty && !existingContracts.contains(key)) {
@@ -216,17 +191,27 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
         }
       }
 
-      // Cek dari dokumen Part
-      if (partSnapshot.exists) {
-        Map<String, dynamic> data = _convertToStringDynamicMap(partSnapshot.data());
-        
-        if (data.containsKey('Kontrak') && data['Kontrak'] is List) {
-          List<dynamic> contractsArray = data['Kontrak'];
-          for (var contract in contractsArray) {
-            if (contract is String && contract.isNotEmpty && !existingContracts.contains(contract)) {
-              existingContracts.add(contract);
+      // Untuk mode Part, tidak perlu cek subcollection
+      if (_currentMode == 'Kumitate') {
+        // Juga cek kontrak dari struktur subcollection (hanya untuk Kumitate)
+        try {
+          CollectionReference lineCollectionRef = _firestore
+              .collection('counter_sistem')
+              .doc(formattedDate)
+              .collection(line);
+
+          QuerySnapshot subcollections = await lineCollectionRef.get();
+          for (DocumentSnapshot doc in subcollections.docs) {
+            if (doc.id == _currentMode) continue;
+            
+            CollectionReference contractSubcollections = doc.reference.collection(doc.id);
+            QuerySnapshot contractProcesses = await contractSubcollections.get();
+            if (contractProcesses.docs.isNotEmpty && !existingContracts.contains(doc.id)) {
+              existingContracts.add(doc.id);
             }
           }
+        } catch (e) {
+          print("Error checking new structure contracts: $e");
         }
       }
 
@@ -253,9 +238,9 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
     try {
       Map<String, List<Map<String, dynamic>>> contractData = {};
       
-      DocumentReference kumitateDocRef = _getDocRef(line, formattedDate, 'Kumitate');
+      DocumentReference docRef = _getDocRef(line, formattedDate);
 
-      DocumentSnapshot snapshot = await kumitateDocRef.get();
+      DocumentSnapshot snapshot = await docRef.get();
       List<String> contractOrder = [];
       
       if (snapshot.exists) {
@@ -298,10 +283,10 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
           }
         }
         
-        // Jika tidak ditemukan di struktur baru, cek struktur lama
-        if (!foundInNewStructure) {
+        // Jika tidak ditemukan di struktur baru, cek struktur lama (hanya untuk Kumitate)
+        if (!foundInNewStructure && _currentMode == 'Kumitate') {
           try {
-            CollectionReference contractCollectionRef = kumitateDocRef.collection(contract);
+            CollectionReference contractCollectionRef = docRef.collection(contract);
             QuerySnapshot processSnapshot = await contractCollectionRef.get();
             
             if (processSnapshot.docs.isNotEmpty) {
@@ -336,6 +321,14 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                 'sequence': 0,
               });
             }
+          }
+        } else if (!foundInNewStructure && _currentMode == 'Part') {
+          // Untuk Part, gunakan base processes dengan sequence 0
+          for (String processName in _baseProcesses[line]!) {
+            processes.add({
+              'name': processName,
+              'sequence': 0,
+            });
           }
         }
 
@@ -374,18 +367,37 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
       _contractProcessData[line]![contract]!
     );
     
-    processes.sort((a, b) {
+    // Jika semua sequence = 0 (belum diatur), pertahankan urutan index array asli
+    bool allZero = processes.every((p) => (p['sequence'] ?? 0) == 0);
+    if (allZero) return processes;
+
+    // Tambahkan index asli sebelum sort agar item sequence=0 tetap terurut sesuai array asli
+    List<Map<String, dynamic>> indexed = processes
+        .asMap()
+        .entries
+        .map((e) => {...e.value, '_originalIndex': e.key})
+        .toList();
+
+    indexed.sort((a, b) {
       int aSeq = a['sequence'] ?? 0;
       int bSeq = b['sequence'] ?? 0;
       
-      if (aSeq == 0 && bSeq == 0) return 0;
-      if (aSeq == 0) return 1;
-      if (bSeq == 0) return -1;
-      
-      return aSeq.compareTo(bSeq);
+      // Keduanya sequence > 0: urutkan berdasarkan sequence
+      if (aSeq > 0 && bSeq > 0) return aSeq.compareTo(bSeq);
+      // a sudah diisi, b belum → a naik ke atas
+      if (aSeq > 0) return -1;
+      // b sudah diisi, a belum → b naik ke atas
+      if (bSeq > 0) return 1;
+      // Keduanya 0: pertahankan urutan asli dari array _baseProcesses
+      return (a['_originalIndex'] as int).compareTo(b['_originalIndex'] as int);
     });
-    
-    return processes;
+
+    // Hapus field helper _originalIndex sebelum dikembalikan
+    return indexed.map((p) {
+      Map<String, dynamic> copy = Map<String, dynamic>.from(p);
+      copy.remove('_originalIndex');
+      return copy;
+    }).toList();
   }
 
   Future<void> saveChangesPerLine(String line) async {
@@ -399,112 +411,112 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
       String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
       
-      // Simpan ke kedua mode (Kumitate dan Part)
-      DocumentReference kumitateDocRef = _getDocRef(line, formattedDate, 'Kumitate');
-      DocumentReference partDocRef = _getDocRef(line, formattedDate, 'Part');
+      DocumentReference docRef = _getDocRef(line, formattedDate);
 
       // STRUKTUR BARU: Simpan array kontrak untuk menjaga urutan dengan field 'Kontrak'
-      Map<String, dynamic> kumitateUpdateData = {
+      Map<String, dynamic> updateData = {
         'Kontrak': _contracts[line]!, // Array of contract names
       };
 
-      Map<String, dynamic> partUpdateData = {
-        'Kontrak': _contracts[line]!, // Array of contract names
-      };
-
-      // Simpan proses untuk Kumitate
-      for (String contract in _contracts[line]!) {
-        List<Map<String, dynamic>> currentProcesses = _contractProcessData[line]![contract] ?? [];
-        
-        // Urutkan processes berdasarkan sequence
-        currentProcesses.sort((a, b) {
-          int aSeq = a['sequence'] ?? 0;
-          int bSeq = b['sequence'] ?? 0;
-          return aSeq.compareTo(bSeq);
-        });
-        
-        // Hanya simpan nama proses yang memiliki sequence > 0
-        List<String> processNamesWithSequence = [];
-        for (var process in currentProcesses) {
-          String processName = process['name'];
-          int sequence = process['sequence'] ?? 0;
-          if (sequence > 0) {
-            processNamesWithSequence.add(processName);
-          }
-        }
-        
-        if (processNamesWithSequence.isNotEmpty) {
-          kumitateUpdateData[contract] = processNamesWithSequence;
-        } else {
-          // Hapus field kontrak jika tidak ada proses dengan sequence > 0
-          kumitateUpdateData[contract] = FieldValue.delete();
-        }
-
-        // Untuk Part, simpan semua proses (tanpa sequence)
-        List<String> partProcessNames = [];
-        List<String> src = (_partProcesses[line] != null && _partProcesses[line]!.isNotEmpty)
-            ? _partProcesses[line]!
-            : _baseProcesses[line]!;
-        for (String processName in src) {
-          partProcessNames.add(processName);
-        }
-        partUpdateData[contract] = partProcessNames;
-      }
-
-      await kumitateDocRef.set(kumitateUpdateData, SetOptions(merge: true));
-      await partDocRef.set(partUpdateData, SetOptions(merge: true));
-
-      // Simpan processes dengan mempertahankan data counter yang sudah ada untuk Kumitate
-      for (String contract in _contracts[line]!) {
-        CollectionReference contractCollectionRef = kumitateDocRef.collection(contract);
-        
-        List<Map<String, dynamic>> currentProcesses = _contractProcessData[line]![contract] ?? [];
-        for (var process in currentProcesses) {
-          String processName = process['name'];
-          int sequence = process['sequence'] ?? 0;
-          
-          if (sequence > 0) {
-            DocumentReference processDocRef = contractCollectionRef.doc(processName);
-            
-            Map<String, dynamic> updateProcessData = {
-              'sequence': sequence,
-            };
-            
-            // Jika ada data existing, pertahankan field-field lainnya
-            if (process.containsKey('existing_data') && process['existing_data'] is Map) {
-              Map<String, dynamic> existingData = Map<String, dynamic>.from(process['existing_data']);
-              existingData.remove('sequence');
-              existingData.remove('updated');
-              updateProcessData.addAll(existingData);
-            }
-            
-            await processDocRef.set(updateProcessData, SetOptions(merge: true));
-          } else {
-            DocumentReference processDocRef = contractCollectionRef.doc(processName);
-            DocumentSnapshot processSnapshot = await processDocRef.get();
-            
-            if (processSnapshot.exists) {
-              await processDocRef.update({
-                'sequence': FieldValue.delete(),
-              });
-            }
-          }
-        }
-      }
-
-      // Buat/Perbarui subcollections kontrak di dokumen Part
-      try {
+      // Untuk mode Kumitate, simpan proses dengan sequence
+      if (_currentMode == 'Kumitate') {
+        // Simpan proses untuk setiap kontrak
         for (String contract in _contracts[line]!) {
-          List<String> processNames = partUpdateData[contract] is List ? List<String>.from(partUpdateData[contract]) : [];
-          if (processNames.isEmpty) continue;
-
-          CollectionReference contractCol = partDocRef.collection(contract);
-          for (String pname in processNames) {
-            await contractCol.doc(pname).set({'part': ''}, SetOptions(merge: true));
+          List<Map<String, dynamic>> currentProcesses = _contractProcessData[line]![contract] ?? [];
+          
+          // Urutkan processes berdasarkan sequence
+          currentProcesses.sort((a, b) {
+            int aSeq = a['sequence'] ?? 0;
+            int bSeq = b['sequence'] ?? 0;
+            return aSeq.compareTo(bSeq);
+          });
+          
+          // Hanya simpan nama proses yang memiliki sequence > 0
+          List<String> processNamesWithSequence = [];
+          for (var process in currentProcesses) {
+            String processName = process['name'];
+            int sequence = process['sequence'] ?? 0;
+            if (sequence > 0) {
+              processNamesWithSequence.add(processName);
+            }
+          }
+          
+          if (processNamesWithSequence.isNotEmpty) {
+            updateData[contract] = processNamesWithSequence;
+          } else {
+            // Hapus field kontrak jika tidak ada proses dengan sequence > 0
+            updateData[contract] = FieldValue.delete();
           }
         }
-      } catch (e) {
-        print('Gagal membuat subcollections untuk Part saat menyimpan: $e');
+
+        await docRef.set(updateData, SetOptions(merge: true));
+
+        // Simpan processes dengan mempertahankan data counter yang sudah ada
+        for (String contract in _contracts[line]!) {
+          CollectionReference contractCollectionRef = docRef.collection(contract);
+          
+          List<Map<String, dynamic>> currentProcesses = _contractProcessData[line]![contract] ?? [];
+          for (var process in currentProcesses) {
+            String processName = process['name'];
+            int sequence = process['sequence'] ?? 0;
+            
+            if (sequence > 0) {
+              DocumentReference processDocRef = contractCollectionRef.doc(processName);
+              
+              Map<String, dynamic> updateProcessData = {
+                'sequence': sequence,
+              };
+              
+              // Jika ada data existing, pertahankan field-field lainnya
+              if (process.containsKey('existing_data') && process['existing_data'] is Map) {
+                Map<String, dynamic> existingData = Map<String, dynamic>.from(process['existing_data']);
+                existingData.remove('sequence');
+                existingData.remove('updated');
+                updateProcessData.addAll(existingData);
+              }
+              
+              await processDocRef.set(updateProcessData, SetOptions(merge: true));
+            } else {
+              DocumentReference processDocRef = contractCollectionRef.doc(processName);
+              DocumentSnapshot processSnapshot = await processDocRef.get();
+              
+              if (processSnapshot.exists) {
+                await processDocRef.update({
+                  'sequence': FieldValue.delete(),
+                });
+              }
+            }
+          }
+        }
+      } else {
+        // Untuk mode Part, simpan semua proses (tanpa sequence)
+        for (String contract in _contracts[line]!) {
+          List<String> processNames = [];
+          List<String> src = (_partProcesses[line] != null && _partProcesses[line]!.isNotEmpty)
+              ? _partProcesses[line]!
+              : _baseProcesses[line]!;
+          for (String processName in src) {
+            processNames.add(processName);
+          }
+          updateData[contract] = processNames;
+        }
+
+        await docRef.set(updateData, SetOptions(merge: true));
+
+        // Buat/Perbarui subcollections kontrak di dokumen Part
+        try {
+          for (String contract in _contracts[line]!) {
+            List<String> processNames = updateData[contract] is List ? List<String>.from(updateData[contract]) : [];
+            if (processNames.isEmpty) continue;
+
+            CollectionReference contractCol = docRef.collection(contract);
+            for (String pname in processNames) {
+              await contractCol.doc(pname).set({'part': ''}, SetOptions(merge: true));
+            }
+          }
+        } catch (e) {
+          print('Gagal membuat subcollections untuk Part saat menyimpan: $e');
+        }
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -517,162 +529,8 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
     }
   }
 
-  // Fungsi untuk mendapatkan proses Kumitate dari data_process
-  Future<List<String>> _getKumitateProcesses() async {
-    try {
-      DocumentSnapshot processSnapshot = 
-          await _firestore.collection('basic_data').doc('data_process').get();
-      
-      if (processSnapshot.exists) {
-        Map<String, dynamic> processData = _convertToStringDynamicMap(processSnapshot.data());
-        
-        // Cek field process_kumitate
-        if (processData.containsKey('process_kumitate') && processData['process_kumitate'] is List) {
-          List<dynamic> kumitateDyn = processData['process_kumitate'];
-          return kumitateDyn.map((e) => e.toString()).toList();
-        }
-      }
-    } catch (e) {
-      print("Error fetching kumitate processes: $e");
-    }
-    return [];
-  }
-
-  // Fungsi untuk menampilkan dialog input sequence
-  Future<Map<String, int>?> _showSequenceDialog(List<String> processes) async {
-    Map<String, int> sequenceMap = {};
-    List<TextEditingController> controllers = [];
-    List<FocusNode> focusNodes = [];
-    
-    for (String process in processes) {
-      sequenceMap[process] = 0;
-      controllers.add(TextEditingController());
-      focusNodes.add(FocusNode());
-    }
-    
-    return showDialog<Map<String, int>>(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setStateDialog) {
-            return AlertDialog(
-              title: Text(
-                "Atur Sequence untuk Kontrak",
-                style: TextStyle(
-                  fontSize: 18,
-                  color: Colors.blue.shade800,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              backgroundColor: Colors.blue.shade50,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: Colors.blue.shade300, width: 1),
-              ),
-              content: Container(
-                width: 400, // Lebar dialog diperkecil
-                height: 450, // Tinggi dialog ditambah
-                child: Column(
-                  children: [
-                    SizedBox(height: 10),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: processes.length,
-                        itemBuilder: (context, index) {
-                          String process = processes[index];
-                          return Container(
-                            margin: EdgeInsets.only(bottom: 8),
-                            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.blue.shade200),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    _formatProcessName(process),
-                                    style: TextStyle(
-                                      fontSize: 16, // Font nama proses diperbesar
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                                SizedBox(width: 10),
-                                Container(
-                                  width: 80,
-                                  child: TextField(
-                                    controller: controllers[index],
-                                    focusNode: focusNodes[index],
-                                    keyboardType: TextInputType.number,
-                                    textInputAction: index < processes.length - 1 
-                                        ? TextInputAction.next 
-                                        : TextInputAction.done,
-                                    decoration: InputDecoration(
-                                      labelText: "Sequence",
-                                      border: OutlineInputBorder(),
-                                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                    ),
-                                    onChanged: (value) {
-                                      int seq = int.tryParse(value) ?? 0;
-                                      sequenceMap[process] = seq;
-                                    },
-                                    onSubmitted: (value) {
-                                      // Pindah ke field berikutnya ketika tekan Enter
-                                      if (index < processes.length - 1) {
-                                        FocusScope.of(context).requestFocus(focusNodes[index + 1]);
-                                      } else {
-                                        // Jika field terakhir, tutup keyboard
-                                        FocusScope.of(context).unfocus();
-                                      }
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(
-                    "Batal",
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.blue.shade800,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context, sequenceMap);
-                  },
-                  child: Text(
-                    "Simpan",
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.blue.shade800,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
   Future<void> addContractToMaster() async {
     TextEditingController controller = TextEditingController();
-    
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -724,50 +582,19 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                     return;
                   }
 
-                  Navigator.pop(context); // Tutup dialog input nama
-                  
-                  // Ambil daftar proses Kumitate
-                  List<String> kumitateProcesses = await _getKumitateProcesses();
-                  
-                  if (kumitateProcesses.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Tidak ada proses Kumitate yang ditemukan!")),
-                    );
-                    return;
-                  }
-                  
-                  // Tampilkan dialog input sequence
-                  Map<String, int>? sequenceMap = await _showSequenceDialog(kumitateProcesses);
-                  
-                  if (sequenceMap == null) {
-                    // User membatalkan input sequence
-                    return;
-                  }
-                  
                   try {
-                    // Hanya simpan ke struktur baru: basic_data/data_contracts/contracts/(nama kontrak)
-                    // Hanya simpan proses dengan sequence > 0
-                    Map<String, dynamic> contractProcessData = {};
-                    
-                    for (String process in kumitateProcesses) {
-                      int sequence = sequenceMap[process] ?? 0;
-                      if (sequence > 0) {
-                        contractProcessData[process] = sequence;
-                      }
-                    }
-                    
-                    await _firestore.collection('basic_data').doc('data_contracts')
-                        .collection('contracts').doc(contractName)
-                        .set(contractProcessData);
-                    
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Kontrak '$contractName' berhasil ditambahkan dengan ${contractProcessData.length} proses aktif!")),
-                    );
+                    await _firestore.collection('basic_data').doc('contracts')
+                        .set({contractName: contractName}, SetOptions(merge: true));
 
                     setState(() {
                       _allContracts.add(contractName);
                       _allContracts.sort();
                     });
+
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Kontrak '$contractName' berhasil ditambahkan ke master list!")),
+                    );
                   } catch (e) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text("Gagal menambah kontrak: $e")),
@@ -776,7 +603,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                 }
               },
               child: Text(
-                "Lanjut",
+                "Tambah",
                 style: TextStyle(
                   fontSize: 14,
                   color: Colors.blue.shade800,
@@ -788,25 +615,6 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
         );
       },
     );
-  }
-
-  // Fungsi untuk mengambil proses dan sequence dari master kontrak
-  Future<Map<String, dynamic>?> _getContractProcessesFromMaster(String contractName) async {
-    try {
-      DocumentSnapshot contractSnapshot = await _firestore
-          .collection('basic_data')
-          .doc('data_contracts')
-          .collection('contracts')
-          .doc(contractName)
-          .get();
-      
-      if (contractSnapshot.exists) {
-        return _convertToStringDynamicMap(contractSnapshot.data());
-      }
-    } catch (e) {
-      print("Error fetching contract processes from master: $e");
-    }
-    return null;
   }
 
   Future<void> addContractToLine(String line) async {
@@ -919,33 +727,14 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                   onPressed: () async {
                     if (selectedContract != null && selectedContract!.isNotEmpty) {
                       try {
-                        // Ambil proses dan sequence dari master kontrak
-                        Map<String, dynamic>? masterProcesses = await _getContractProcessesFromMaster(selectedContract!);
-                        
-                        List<Map<String, dynamic>> newProcesses = [];
-                        
-                        if (masterProcesses != null && masterProcesses.isNotEmpty) {
-                          // Gunakan proses dari master kontrak
-                          masterProcesses.forEach((processName, sequence) {
-                            newProcesses.add({
-                              'name': processName,
-                              'sequence': sequence is int ? sequence : 0,
-                            });
-                          });
-                          
-                          // Urutkan berdasarkan sequence
-                          newProcesses.sort((a, b) => (a['sequence'] ?? 0).compareTo(b['sequence'] ?? 0));
-                        } else {
-                          // Fallback: gunakan base processes dengan sequence 0
-                          newProcesses = _baseProcesses[line]!
-                              .map((processName) => {'name': processName, 'sequence': 0})
-                              .toList();
-                        }
-                        
                         setState(() {
                           if (!_contracts[line]!.contains(selectedContract!)) {
                             _contracts[line]!.add(selectedContract!);
                           }
+                          
+                          List<Map<String, dynamic>> newProcesses = _baseProcesses[line]!
+                              .map((processName) => {'name': processName, 'sequence': 0})
+                              .toList();
                           
                           if (_contractProcessData[line] == null) {
                             _contractProcessData[line] = {};
@@ -954,6 +743,41 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                           _contractProcessData[line]![selectedContract!] = newProcesses;
                           _selectedContracts[line] = selectedContract!;
                         });
+
+                        // Jika saat ini di mode Kumitate, juga simpan struktur Part
+                        // sehingga kontrak yang ditambahkan ke Kumitate otomatis tersedia di Part
+                        if (_currentMode == 'Kumitate') {
+                          try {
+                            String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
+                            DocumentReference partDocRef = _firestore
+                                .collection('counter_sistem')
+                                .doc(formattedDate)
+                                .collection(line)
+                                .doc('Part');
+
+              // Untuk Part, gunakan daftar proses khusus PART jika ada,
+              // jika tidak ada gunakan baseProcesses sebagai fallback
+              List<String> processNames = (_partProcesses[line] != null && _partProcesses[line]!.isNotEmpty)
+                ? List<String>.from(_partProcesses[line]!)
+                : List<String>.from(_baseProcesses[line]!);
+
+                            await partDocRef.set({
+                              'Kontrak': FieldValue.arrayUnion([selectedContract]),
+                              selectedContract!: processNames,
+                            }, SetOptions(merge: true));
+                            // Buat subcollection kontrak di bawah dokumen Part dan tambahkan dokumen proses
+                            try {
+                              CollectionReference contractCol = partDocRef.collection(selectedContract!);
+                              for (String p in processNames) {
+                                await contractCol.doc(p).set({'part': ''}, SetOptions(merge: true));
+                              }
+                            } catch (e) {
+                              print('Gagal membuat subcollection kontrak di Part: $e');
+                            }
+                          } catch (e) {
+                            print('Gagal menyimpan kontrak ke Part: $e');
+                          }
+                        }
 
                         Navigator.pop(context);
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -1026,9 +850,8 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                 try {
                   String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
 
-                  // Hapus dari kedua mode (Kumitate dan Part)
-                  DocumentReference kumitateDocRef = _getDocRef(line, formattedDate, 'Kumitate');
-                  DocumentReference partDocRef = _getDocRef(line, formattedDate, 'Part');
+                  // Hapus dari dokumen sesuai mode saat ini (mis. Kumitate)
+                  DocumentReference docRef = _getDocRef(line, formattedDate);
 
                   List<String> updatedContracts = List<String>.from(_contracts[line]!);
                   updatedContracts.remove(contractName);
@@ -1038,8 +861,26 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                     contractName: FieldValue.delete()
                   };
 
-                  await kumitateDocRef.set(updateData, SetOptions(merge: true));
-                  await partDocRef.set(updateData, SetOptions(merge: true));
+                  await docRef.set(updateData, SetOptions(merge: true));
+
+                  // Selalu coba hapus juga dari Part (field dan subcollection)
+                  try {
+                    DocumentReference partDocRef = _firestore
+                        .collection('counter_sistem')
+                        .doc(formattedDate)
+                        .collection(line)
+                        .doc('Part');
+
+                    // Hapus nama kontrak dari array 'Kontrak' di Part
+                    await partDocRef.set({
+                      'Kontrak': FieldValue.arrayRemove([contractName]),
+                      contractName: FieldValue.delete()
+                    }, SetOptions(merge: true));
+
+                    // Jangan hapus subcollection kontrak di Part — hanya hapus array/field.
+                  } catch (e) {
+                    print('Gagal menghapus kontrak di Part: $e');
+                  }
 
                   setState(() {
                     _contracts[line]!.remove(contractName);
@@ -1050,7 +891,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                   });
 
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Kontrak $contractName berhasil dihapus dari Line")),
+                    SnackBar(content: Text("Kontrak $contractName berhasil dihapus dari Line dan Part")),
                   );
                 } catch (e) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -1073,6 +914,89 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
     );
   }
 
+  // Fungsi untuk mendapatkan key unik untuk sequence controller dan focus node
+  String _getSequenceKey(String line, String contractName, String processName) {
+    return '${line}_${contractName}_${processName}';
+  }
+
+  // Fungsi untuk inisialisasi controller dan focus node jika belum ada
+  void _initializeSequenceController(String line, String contractName, String processName, int sequence) {
+    String key = _getSequenceKey(line, contractName, processName);
+    
+    if (!_sequenceControllers.containsKey(key)) {
+      _sequenceControllers[key] = TextEditingController(text: sequence > 0 ? sequence.toString() : '');
+    }
+    
+    if (!_sequenceFocusNodes.containsKey(key)) {
+      _sequenceFocusNodes[key] = FocusNode();
+      
+      // Tambahkan listener untuk focus node
+      _sequenceFocusNodes[key]!.addListener(() {
+        if (!_sequenceFocusNodes[key]!.hasFocus) {
+          // Ketika kehilangan fokus, update sequence
+          _updateProcessSequenceFromController(line, contractName, processName);
+        }
+      });
+    }
+  }
+
+  // Fungsi untuk update sequence dari controller ketika kehilangan fokus
+  void _updateProcessSequenceFromController(String line, String contractName, String processName) {
+    String key = _getSequenceKey(line, contractName, processName);
+    String sequenceText = _sequenceControllers[key]?.text ?? '';
+    int sequence = int.tryParse(sequenceText) ?? 0;
+    
+    _updateProcessSequence(line, contractName, processName, sequence);
+  }
+
+  // Fungsi untuk update sequence (versi baru dengan processName)
+  void _updateProcessSequence(String line, String contractName, String processName, int sequence) {
+    // Hanya untuk Kumitate, Part tidak bisa edit sequence
+    if (_currentMode == 'Part') return;
+    
+    setState(() {
+      if (_contractProcessData[line] != null && 
+          _contractProcessData[line]![contractName] != null) {
+        
+        int originalIndex = _contractProcessData[line]![contractName]!
+            .indexWhere((process) => process['name'] == processName);
+        
+        if (originalIndex >= 0) {
+          _contractProcessData[line]![contractName]![originalIndex]['sequence'] = sequence;
+        }
+      }
+    });
+  }
+
+  // Fungsi untuk handle onEditingComplete (ketika menekan Enter/Submit)
+  void _onSequenceEditingComplete(String line, String contractName, String processName, int currentIndex, List<Map<String, dynamic>> sortedProcesses) {
+    // Update sequence dari controller
+    _updateProcessSequenceFromController(line, contractName, processName);
+    
+    // Pindah fokus ke proses berikutnya jika ada
+    if (currentIndex + 1 < sortedProcesses.length) {
+      String nextProcessName = sortedProcesses[currentIndex + 1]['name'];
+      String nextKey = _getSequenceKey(line, contractName, nextProcessName);
+      
+      // Pastikan controller dan focus node untuk proses berikutnya sudah diinisialisasi
+      int nextSequence = sortedProcesses[currentIndex + 1]['sequence'] ?? 0;
+      _initializeSequenceController(line, contractName, nextProcessName, nextSequence);
+      
+      FocusNode? nextFocus = _sequenceFocusNodes[nextKey];
+      if (nextFocus != null) {
+        FocusScope.of(context).requestFocus(nextFocus);
+      }
+    } else {
+      // Jika sudah di proses terakhir, unfocus
+      FocusScope.of(context).unfocus();
+    }
+  }
+
+  // Fungsi untuk handle onFieldSubmitted (ketika menekan Enter)
+  void _onSequenceFieldSubmitted(String line, String contractName, String processName, int currentIndex, List<Map<String, dynamic>> sortedProcesses) {
+    _onSequenceEditingComplete(line, contractName, processName, currentIndex, sortedProcesses);
+  }
+
   Future<void> selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -1088,6 +1012,16 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
           _selectedContracts[line] = "";
           _contractProcessData[line] = {};
         }
+        
+        // Clear semua controllers dan focus nodes ketika tanggal berubah
+        for (var controller in _sequenceControllers.values) {
+          controller.dispose();
+        }
+        for (var focusNode in _sequenceFocusNodes.values) {
+          focusNode.dispose();
+        }
+        _sequenceControllers.clear();
+        _sequenceFocusNodes.clear();
       });
       await fetchProcessLines();
     }
@@ -1372,7 +1306,9 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
           Expanded(
             child: Container(
               padding: EdgeInsets.all(8),
-              child: _buildKumitateContent(line, selectedContract, sortedProcesses),
+              child: _currentMode == 'Part' 
+                  ? _buildPartContent(line, selectedContract, sortedProcesses)
+                  : _buildKumitateContent(line, selectedContract, sortedProcesses),
             ),
           ),
         ],
@@ -1380,8 +1316,8 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
     );
   }
 
-  // Widget untuk konten Kumitate (hanya menampilkan sequence, tidak bisa edit)
-  Widget _buildKumitateContent(String line, String selectedContract, List<Map<String, dynamic>> sortedProcesses) {
+  // Widget untuk konten Part (tampilkan proses dengan warna hitam)
+  Widget _buildPartContent(String line, String selectedContract, List<Map<String, dynamic>> sortedProcesses) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1433,8 +1369,117 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                       itemCount: sortedProcesses.length,
                       itemBuilder: (context, index) {
                         Map<String, dynamic> process = sortedProcesses[index];
+                        
+                        return Container(
+                          margin: EdgeInsets.only(bottom: 6),
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            border: Border.all(color: Colors.blue.shade200),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade500,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    (index + 1).toString(),
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: 12),
+                              
+                              Expanded(
+                                child: Text(
+                                  _formatProcessName(process['name']),
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+
+  // Widget untuk konten Kumitate (dengan edit sequence)
+  Widget _buildKumitateContent(String line, String selectedContract, List<Map<String, dynamic>> sortedProcesses) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "Processes untuk:",
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Colors.blue.shade800,
+          ),
+        ),
+        Text(
+          selectedContract,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            color: Colors.blue.shade900,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        SizedBox(height: 8),
+        
+        Expanded(
+          child: selectedContract.isEmpty
+              ? Center(
+                  child: Text(
+                    _contracts[line]!.isNotEmpty
+                        ? "Pilih kontrak di atas"
+                        : "Klik + untuk tambah kontrak",
+                    style: TextStyle(
+                      fontStyle: FontStyle.italic, 
+                      fontSize: 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : sortedProcesses.isEmpty
+                  ? Center(
+                      child: Text(
+                        "Tidak ada processes",
+                        style: TextStyle(
+                          fontStyle: FontStyle.italic, 
+                          fontSize: 14,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: sortedProcesses.length,
+                      itemBuilder: (context, index) {
+                        Map<String, dynamic> process = sortedProcesses[index];
                         int sequence = process['sequence'] ?? 0;
                         String processName = process['name'];
+                        
+                        // Inisialisasi controller dan focus node untuk proses ini
+                        _initializeSequenceController(line, selectedContract, processName, sequence);
+                        String key = _getSequenceKey(line, selectedContract, processName);
                         
                         return Container(
                           margin: EdgeInsets.only(bottom: 6),
@@ -1480,34 +1525,28 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                                 ),
                               ),
                               
-                              // Kotak putih untuk membungkus angka sequence
                               Container(
-                                width: 50,
-                                height: 30,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(
-                                    color: Colors.grey.shade400,
-                                    width: 1,
+                                width: 60,
+                                child: TextFormField(
+                                  controller: _sequenceControllers[key],
+                                  focusNode: _sequenceFocusNodes[key],
+                                  keyboardType: TextInputType.number,
+                                  textInputAction: index < sortedProcesses.length - 1 
+                                      ? TextInputAction.next 
+                                      : TextInputAction.done,
+                                  onEditingComplete: () => _onSequenceEditingComplete(
+                                    line, selectedContract, processName, index, sortedProcesses),
+                                  onFieldSubmitted: (_) => _onSequenceFieldSubmitted(
+                                    line, selectedContract, processName, index, sortedProcesses),
+                                  decoration: InputDecoration(
+                                    labelText: "Seq",
+                                    border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    labelStyle: TextStyle(fontSize: 12),
+                                    isDense: true,
                                   ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black12,
-                                      blurRadius: 2,
-                                      offset: Offset(0, 1),
-                                    ),
-                                  ],
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    sequence.toString(),
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.black,
-                                      //fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                                  style: TextStyle(fontSize: 14),
+                                  textAlign: TextAlign.center,
                                 ),
                               ),
                             ],
