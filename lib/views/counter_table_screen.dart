@@ -362,7 +362,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
   final List<String> timeSlots = [
     "08:30", "09:30", "10:30", "11:30", "12:00",
-    "13:00", "14:00", "15:00", "16:00", "17:25", "17:55",
+    "13:00", "14:00", "15:00", "16:00",
+    // Overtime slots (start at 17:25)
+    "17:25", "17:55",
   ];
     List<String> visibleTimeSlots = [];
 
@@ -415,8 +417,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     "15:45": "16:00",
     "16:00": "16:00",
 
+    // Map post-16:00 minutes into overtime slots
     "16:15": "17:25",
-    "16:30": "17:25", 
+    "16:30": "17:25",
     "16:45": "17:25",
     "17:00": "17:25",
     "17:15": "17:25",
@@ -479,19 +482,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         final data = doc.data()!;
         final targetMap = data['target_map_$selectedLine'] as Map<String, dynamic>? ?? {};
 
-        // Inisialisasi hourly targets
+        // Inisialisasi hourly targets menggunakan label yang sama dengan `timeSlots`
         Map<String, double> calculatedHourlyTargets = {
-          '08:30': 0.0,
-          '09:30': 0.0,
-          '10:30': 0.0,
-          '11:30': 0.0,
-          '13:30': 0.0,
-          '14:30': 0.0,
-          '15:30': 0.0,
-          '16:30': 0.0,
-          '17:55': 0.0,
-          '18:55': 0.0,
-          '19:55': 0.0,
+          for (var s in timeSlots) s: 0.0,
         };
 
         double totalDailyTarget = 0.0;
@@ -512,12 +505,59 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           // Urutkan styles berdasarkan key (style1, style2, dll)
           styles.sort((a, b) => a['key'].compareTo(b['key']));
 
-          // Hitung target per jam untuk style normal (08:30 - 16:30)
-          // Alokasi berbasis detik per slot sehingga sisa waktu di slot dapat dipakai oleh style berikutnya
-          List<String> normalTimeSlots = ['08:30', '09:30', '10:30', '11:30', '13:30', '14:30', '15:30', '16:30'];
+          // Hitung target per slot untuk jam kerja normal.
+          // Gunakan label `timeSlots` untuk kunci, dan alokasikan total productive seconds (8 jam = 28800s)
+          // secara merata ke semua normal slots (non-overtime) agar perubahan timeslot tetap sinkron.
+          // Overtime slots are now 17:25 and 17:55 only
+          List<String> overtimeTimeSlots = ['17:25', '17:55'];
+          List<String> normalTimeSlots = timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
           int currentTimeSlotIndex = 0;
 
-          final Map<String, double> slotRemainingSeconds = { for (var s in normalTimeSlots) s: 3600.0 };
+          // Compute actual available seconds per normal slot by intersecting slot interval
+          // with productive periods (07:30-12:00 and 12:30-16:00). This ensures slots
+          // that are 30-min are handled correctly and allocation by time_perpcs is accurate.
+          DateTime parseTime(String t) {
+            final parts = t.split(':');
+            return DateTime(2000, 1, 1, int.parse(parts[0]), int.parse(parts[1]));
+          }
+
+          DateTime morningStart = DateTime(2000, 1, 1, 7, 30);
+          DateTime morningEnd = DateTime(2000, 1, 1, 12, 0);
+          DateTime afternoonStart = DateTime(2000, 1, 1, 12, 30);
+          DateTime afternoonEnd = DateTime(2000, 1, 1, 16, 1);
+
+          // Total productive seconds across morning and afternoon (used as a fallback)
+          // Note: afternoonEnd is 16:01 to include the full 16:00 hour
+          double productiveSeconds = morningEnd.difference(morningStart).inSeconds.toDouble()
+              + (afternoonEnd.difference(afternoonStart).inSeconds - 60).toDouble();
+
+          final Map<String, double> slotRemainingSeconds = {};
+          for (int idx = 0; idx < normalTimeSlots.length; idx++) {
+            final endLabel = normalTimeSlots[idx];
+            final DateTime end = parseTime(endLabel);
+            final DateTime start;
+            if (idx > 0) {
+              start = parseTime(normalTimeSlots[idx - 1]);
+            } else {
+              start = DateTime(2000, 1, 1, 7, 30);
+            }
+
+            double avail = 0.0;
+            // overlap with morning
+            final overlapStart1 = start.isAfter(morningStart) ? start : morningStart;
+            final overlapEnd1 = end.isBefore(morningEnd) ? end : morningEnd;
+            if (overlapEnd1.isAfter(overlapStart1)) {
+              avail += overlapEnd1.difference(overlapStart1).inSeconds.toDouble();
+            }
+            // overlap with afternoon
+            final overlapStart2 = start.isAfter(afternoonStart) ? start : afternoonStart;
+            final overlapEnd2 = end.isBefore(afternoonEnd) ? end : afternoonEnd;
+            if (overlapEnd2.isAfter(overlapStart2)) {
+              avail += overlapEnd2.difference(overlapStart2).inSeconds.toDouble();
+            }
+
+            slotRemainingSeconds[endLabel] = avail;
+          }
 
           for (var style in styles) {
             double remainingQuantity = style['quantity'];
@@ -527,7 +567,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
             while (remainingQuantity > 0 && currentTimeSlotIndex < normalTimeSlots.length) {
               final currentTimeSlot = normalTimeSlots[currentTimeSlotIndex];
-              double slotSec = slotRemainingSeconds[currentTimeSlot] ?? 3600.0;
+              double slotSec = slotRemainingSeconds[currentTimeSlot] ?? (productiveSeconds / (normalTimeSlots.isNotEmpty ? normalTimeSlots.length : 1));
 
               if (slotSec <= 1e-9) {
                 currentTimeSlotIndex++;
@@ -564,9 +604,11 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             double overtimeTimePerPcs = (overtimeData['time_perpcs'] as num?)?.toDouble() ?? 0.0;
 
             if (overtimeTimePerPcs > 0 && overtimeQuantity > 0) {
-              List<String> overtimeTimeSlots = ['17:55', '18:55', '19:55'];
+              // Use overtime slots defined above (30-min each)
+              List<String> overtimeTimeSlots = ['16:25', '16:55', '17:25', '17:55'];
               double remainingOvertime = overtimeQuantity;
-              final Map<String, double> overtimeSlotSec = { for (var s in overtimeTimeSlots) s: 3600.0 };
+              // each overtime slot is 30 minutes
+              final Map<String, double> overtimeSlotSec = { for (var s in overtimeTimeSlots) s: 1800.0 };
               int otIndex = 0;
               while (remainingOvertime > 0 && otIndex < overtimeTimeSlots.length) {
                 final slot = overtimeTimeSlots[otIndex];
@@ -593,21 +635,11 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           final target = data['target_$selectedLine'];
           if (target is num) {
             totalDailyTarget = target.toDouble();
-            double targetPerHour = totalDailyTarget / 8;
-            
-            calculatedHourlyTargets = {
-              '08:30': targetPerHour,
-              '09:30': targetPerHour,
-              '10:30': targetPerHour,
-              '11:30': targetPerHour,
-              '13:30': targetPerHour,
-              '14:30': targetPerHour,
-              '15:30': targetPerHour,
-              '16:30': targetPerHour,
-              '17:55': 0.0,
-              '18:55': 0.0,
-              '19:55': 0.0,
-            };
+            // Distribusikan total daily target ke normal slots (non-overtime)
+            List<String> overtimeTimeSlots = ['16:25', '16:55', '17:25', '17:55'];
+            final normalSlots = timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
+            final perSlot = normalSlots.isNotEmpty ? totalDailyTarget / normalSlots.length : 0.0;
+            calculatedHourlyTargets = { for (var s in timeSlots) s: (normalSlots.contains(s) ? perSlot : 0.0) };
           }
         }
 
@@ -915,7 +947,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         renderer: (rendererContext) {
           final part1 = rendererContext.cell.value?.toString() ?? '';
           final part2 = rendererContext.row.cells['part_2']?.value?.toString() ?? '';
-          final targetPerJam = hourlyTargets.isNotEmpty ? (hourlyTargets.values.first * 2) : 0;
+          // Target Part selalu 2x target jam PERTAMA (bukan per-jam masing-masing)
+          final firstSlot = visibleTimeSlots.isNotEmpty ? visibleTimeSlots.first : (timeSlots.isNotEmpty ? timeSlots.first : '08:30');
+          final targetPerJam = hourlyTargets.isNotEmpty ? ((hourlyTargets[firstSlot] ?? hourlyTargets.values.first) * 2) : 0;
           // Saat edit: tampilkan gabungan part1,part2 di semua baris
           if (rendererContext.stateManager.isEditing && rendererContext.stateManager.currentCell == rendererContext.cell) {
             String part1 = rendererContext.cell.value?.toString() ?? '';
@@ -1138,8 +1172,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         cellPadding: EdgeInsets.zero,
         renderer: (rendererContext) {
           final value = rendererContext.cell.value?.toString() ?? '';
-          final targetPerJam = hourlyTargets[time] ?? 0.0;
-          final partTarget = targetPerJam * 2;
+          // Target Part selalu 2x target jam PERTAMA (bukan jam slot saat ini)
+          // Berlaku juga untuk slot 12:00 dan 13:00 yang hanya 30 menit
+          final firstSlot = visibleTimeSlots.isNotEmpty ? visibleTimeSlots.first : (timeSlots.isNotEmpty ? timeSlots.first : '08:30');
+          final partTarget = (hourlyTargets[firstSlot] ?? 0.0) * 2;
           BoxDecoration baseDecoration = BoxDecoration(
             color: Colors.blue.shade50,
             border: Border(
@@ -1529,15 +1565,40 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
             // First row (process) always has 0 stock
             cells["${time}_stock"] = PlutoCell(value: 0);
           } else {
-            // For other rows: stock = stock_pagi_stock + previous process cumulative - current process cumulative
-            final previousProcess = filteredKumitateData[i-1];
-            final previousCumulative = previousProcess["${time}_cumulative"] ?? 0;
-            final currentCumulative = entry["${time}_cumulative"] ?? 0;
-            // stock_pagi_stock = stock_pagi_1 + ... + stock_pagi_5
-            final pagiStock = (cells['stock_pagi_1']?.value ?? 0) + (cells['stock_pagi_2']?.value ?? 0) + (cells['stock_pagi_3']?.value ?? 0) + (cells['stock_pagi_4']?.value ?? 0) + (cells['stock_pagi_5']?.value ?? 0);
-            cells["stock_pagi_stock"] = PlutoCell(value: pagiStock);
-            final stockValue = pagiStock + previousCumulative - currentCumulative;
-            cells["${time}_stock"] = PlutoCell(value: stockValue);
+            // For overtime slots (17:25, 17:55), check if there's data at 16:00
+            bool isOvertimeSlot = ['17:25', '17:55'].contains(time);
+            bool hasDataAt1600 = (entry["16:00_cumulative"] ?? 0) != 0;
+            
+            if (isOvertimeSlot && !hasDataAt1600) {
+              // No data at 16:00, so process has finished - skip overtime stock calculation
+              cells["${time}_stock"] = PlutoCell(value: 0);
+            } else {
+              // For other rows: stock = stock_pagi_stock + previous process cumulative - current process cumulative
+              final previousProcess = filteredKumitateData[i-1];
+              // Helper: find latest cumulative value at or before `time` for a process
+              int findLatestCumulative(Map<String, dynamic> proc, String targetTime) {
+                final idx = timeSlots.indexOf(targetTime);
+                if (idx == -1) return 0;
+                for (int j = idx; j >= 0; j--) {
+                  final key = '${timeSlots[j]}_cumulative';
+                  final val = proc[key];
+                  if (val != null) {
+                    final intVal = val is int ? val : int.tryParse(val?.toString() ?? '') ?? 0;
+                    if (intVal != 0) return intVal;
+                  }
+                }
+                return 0;
+              }
+
+              // Use the latest available cumulative (akumulatif) at or before the slot.
+              int previousCumulative = findLatestCumulative(previousProcess, time);
+              int currentCumulative = findLatestCumulative(entry, time);
+              // stock_pagi_stock = stock_pagi_1 + ... + stock_pagi_5
+              final pagiStock = (cells['stock_pagi_1']?.value ?? 0) + (cells['stock_pagi_2']?.value ?? 0) + (cells['stock_pagi_3']?.value ?? 0) + (cells['stock_pagi_4']?.value ?? 0) + (cells['stock_pagi_5']?.value ?? 0);
+              cells["stock_pagi_stock"] = PlutoCell(value: pagiStock);
+              final stockValue = pagiStock + previousCumulative - currentCumulative;
+              cells["${time}_stock"] = PlutoCell(value: stockValue);
+            }
           }
         }
 

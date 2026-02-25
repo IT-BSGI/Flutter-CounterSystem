@@ -28,7 +28,9 @@ class _HomePageState extends State<HomePage> {
   // Updated time slots to match counter_table_screen.dart
   final List<String> timeSlots = [
     "08:30", "09:30", "10:30", "11:30", "12:00",
-    "13:00", "14:00", "15:00", "16:00", "17:25", "17:55",
+    "13:00", "14:00", "15:00", "16:00",
+    // Overtime slots (start at 17:25)
+    "17:25", "17:55",
   ];
 
   final Map<String, String> timeRangeMap = {
@@ -80,8 +82,9 @@ class _HomePageState extends State<HomePage> {
     "15:45": "16:00",
     "16:00": "16:00",
 
+    // Map post-16:00 minutes into overtime slots
     "16:15": "17:25",
-    "16:30": "17:25", 
+    "16:30": "17:25",
     "16:45": "17:25",
     "17:00": "17:25",
     "17:15": "17:25",
@@ -185,19 +188,9 @@ class _HomePageState extends State<HomePage> {
         final data = doc.data()!;
         final targetMap = data['target_map_$line'] as Map<String, dynamic>? ?? {};
 
-        // Inisialisasi hourly targets
+        // Inisialisasi hourly targets menggunakan label yang sama dengan `timeSlots`
         Map<String, double> calculatedHourlyTargets = {
-          '08:30': 0.0,
-          '09:30': 0.0,
-          '10:30': 0.0,
-          '11:30': 0.0,
-          '13:30': 0.0,
-          '14:30': 0.0,
-          '15:30': 0.0,
-          '16:30': 0.0,
-          '17:55': 0.0,
-          '18:55': 0.0,
-          '19:55': 0.0,
+          for (var s in timeSlots) s: 0.0,
         };
 
         double totalDailyTarget = 0.0;
@@ -218,12 +211,54 @@ class _HomePageState extends State<HomePage> {
           // Urutkan styles berdasarkan key (style1, style2, dll)
           styles.sort((a, b) => a['key'].compareTo(b['key']));
 
-          // Hitung target per jam untuk style normal (08:30 - 16:30)
-          // Alokasi berbasis detik per slot sehingga sisa waktu di slot dapat dipakai oleh style berikutnya
-          List<String> normalTimeSlots = ['08:30', '09:30', '10:30', '11:30', '13:30', '14:30', '15:30', '16:30'];
+          // Hitung target per slot untuk jam kerja normal.
+          // Gunakan label `timeSlots` untuk kunci, dan alokasikan total productive seconds (8 jam = 28800s)
+          // secara merata ke semua normal slots (non-overtime) agar perubahan timeslot tetap sinkron.
+          // Overtime slots are now 17:25 and 17:55 only
+          List<String> overtimeTimeSlots = ['17:25', '17:55'];
+          List<String> normalTimeSlots = timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
           int currentTimeSlotIndex = 0;
 
-          final Map<String, double> slotRemainingSeconds = { for (var s in normalTimeSlots) s: 3600.0 };
+          // Compute actual available seconds per normal slot by intersecting slot interval
+          // with productive periods (07:30-12:00 and 12:30-16:00). This ensures slots
+          // that are 30-min are handled correctly and allocation by time_perpcs is accurate.
+          DateTime parseTime(String t) {
+            final parts = t.split(':');
+            return DateTime(2000, 1, 1, int.parse(parts[0]), int.parse(parts[1]));
+          }
+
+          DateTime morningStart = DateTime(2000, 1, 1, 7, 30);
+          DateTime morningEnd = DateTime(2000, 1, 1, 12, 0);
+          DateTime afternoonStart = DateTime(2000, 1, 1, 12, 30);
+          DateTime afternoonEnd = DateTime(2000, 1, 1, 16, 1);
+
+          final Map<String, double> slotRemainingSeconds = {};
+          for (int idx = 0; idx < normalTimeSlots.length; idx++) {
+            final endLabel = normalTimeSlots[idx];
+            final DateTime end = parseTime(endLabel);
+            final DateTime start;
+            if (idx > 0) {
+              start = parseTime(normalTimeSlots[idx - 1]);
+            } else {
+              start = DateTime(2000, 1, 1, 7, 30);
+            }
+
+            double avail = 0.0;
+            // overlap with morning
+            final overlapStart1 = start.isAfter(morningStart) ? start : morningStart;
+            final overlapEnd1 = end.isBefore(morningEnd) ? end : morningEnd;
+            if (overlapEnd1.isAfter(overlapStart1)) {
+              avail += overlapEnd1.difference(overlapStart1).inSeconds.toDouble();
+            }
+            // overlap with afternoon
+            final overlapStart2 = start.isAfter(afternoonStart) ? start : afternoonStart;
+            final overlapEnd2 = end.isBefore(afternoonEnd) ? end : afternoonEnd;
+            if (overlapEnd2.isAfter(overlapStart2)) {
+              avail += overlapEnd2.difference(overlapStart2).inSeconds.toDouble();
+            }
+
+            slotRemainingSeconds[endLabel] = avail;
+          }
 
           for (var style in styles) {
             double remainingQuantity = style['quantity'];
@@ -270,9 +305,9 @@ class _HomePageState extends State<HomePage> {
             double overtimeTimePerPcs = (overtimeData['time_perpcs'] as num?)?.toDouble() ?? 0.0;
 
             if (overtimeTimePerPcs > 0 && overtimeQuantity > 0) {
-              List<String> overtimeTimeSlots = ['17:55', '18:55', '19:55'];
+              List<String> overtimeTimeSlots = ['16:25', '16:55', '17:25', '17:55'];
               double remainingOvertime = overtimeQuantity;
-              final Map<String, double> overtimeSlotSec = { for (var s in overtimeTimeSlots) s: 3600.0 };
+              final Map<String, double> overtimeSlotSec = { for (var s in overtimeTimeSlots) s: 1800.0 };
               int otIndex = 0;
               while (remainingOvertime > 0 && otIndex < overtimeTimeSlots.length) {
                 final slot = overtimeTimeSlots[otIndex];
@@ -299,21 +334,11 @@ class _HomePageState extends State<HomePage> {
           final target = data['target_$line'];
           if (target is num) {
             totalDailyTarget = target.toDouble();
-            double targetPerHour = totalDailyTarget / 8;
-            
-            calculatedHourlyTargets = {
-              '08:30': targetPerHour,
-              '09:30': targetPerHour,
-              '10:30': targetPerHour,
-              '11:30': targetPerHour,
-              '13:30': targetPerHour,
-              '14:30': targetPerHour,
-              '15:30': targetPerHour,
-              '16:30': targetPerHour,
-              '17:55': 0.0,
-              '18:55': 0.0,
-              '19:55': 0.0,
-            };
+            // Distribusikan total daily target ke normal slots (non-overtime)
+            List<String> overtimeTimeSlots = ['16:25', '16:55', '17:25', '17:55'];
+            final normalSlots = timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
+            final perSlot = normalSlots.isNotEmpty ? totalDailyTarget / normalSlots.length : 0.0;
+            calculatedHourlyTargets = { for (var s in timeSlots) s: (normalSlots.contains(s) ? perSlot : 0.0) };
           }
         }
 
