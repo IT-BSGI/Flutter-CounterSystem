@@ -6,6 +6,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:excel/excel.dart' as excel;
 import 'package:file_saver/file_saver.dart';
 import 'dart:typed_data';
+import 'dart:async';
 
 class CounterTableScreen extends StatefulWidget {
   @override
@@ -25,6 +26,22 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   String? selectedPartProcessName;
   List<String> partProcessNames = [];
   List<PlutoColumnGroup> partProsesColumnGroups = [];
+
+  // Timer untuk auto-refresh enableEditingMode setiap menit
+  Timer? _editableCheckTimer;
+
+  // Helper function untuk mengecek apakah masih dalam waktu edit stock pagi.
+  // Bisa diedit jika waktu sekarang SEBELUM jam 08:30 (jam berapapun: 06:xx, 07:xx, 08:00-08:29).
+  // Setelah 08:30 tidak bisa diedit.
+  bool _is0830Slot() {
+    final now = DateTime.now();
+    final isToday = selectedDate.year == now.year &&
+                    selectedDate.month == now.month &&
+                    selectedDate.day == now.day;
+    if (!isToday) return false;
+    final before0830 = now.hour < 8 || (now.hour == 8 && now.minute < 30);
+    return before0830;
+  }
 
   // Build tabel Proses: timeslot, 1,2,3,4,5, total akumulatif per timeslot
   void _buildProsesTable() {
@@ -360,6 +377,11 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
   PlutoGridStateManager? _kumitateStateManager;
   PlutoGridStateManager? _partStateManager;
 
+  // Track semua perubahan yang dibuat user: key = "processName|field", value = dynamic
+  // Ini memastikan nilai terbaru selalu tersimpan meski stateManager null atau rows kosong
+  final Map<String, dynamic> _editedKumitateValues = {};
+  final Map<String, dynamic> _editedPartValues = {};
+
   final List<String> timeSlots = [
     "08:30", "09:30", "10:30", "11:30", "12:00",
     "13:00", "14:00", "15:00", "16:00",
@@ -466,8 +488,23 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
     super.initState();
     loadData();
     _loadTargets();
-    _loadContractNames(); // Tambahkan ini
+    _loadContractNames();
 
+    // Auto-refresh enableEditingMode setiap menit agar perubahan waktu
+    // (misal saat melewati jam 08:30) langsung terdeteksi tanpa restart app.
+    _editableCheckTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _buildKumitateColumnsAndRows();
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _editableCheckTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadTargets() async {
@@ -844,7 +881,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         enableColumnDrag: false,
         enableDropToResize: false,
         enableContextMenu: false,
-        enableEditingMode: isEditableNow,
+        enableEditingMode: true, // Bisa diedit kapanpun
         enableSorting: false,
         applyFormatterInEditing: true,
         formatter: (value) {
@@ -913,7 +950,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
           enableContextMenu: false,
           enableDropToResize: false,
           enableSorting: false,
-          enableEditingMode: isEditableNow,
+          // Hanya bisa diedit jika jam 08:30
+          enableEditingMode: _is0830Slot(),
           cellPadding: EdgeInsets.zero,
           renderer: (rendererContext) {
             final value = rendererContext.cell.value as int;
@@ -942,7 +980,8 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         enableContextMenu: false,
         enableDropToResize: false,
         enableSorting: false,
-        enableEditingMode: isEditableNow,
+        // Hanya bisa diedit jika jam 08:30
+        enableEditingMode: _is0830Slot(),
         cellPadding: EdgeInsets.zero,
         renderer: (rendererContext) {
           final part1 = rendererContext.cell.value?.toString() ?? '';
@@ -1733,7 +1772,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
         enableColumnDrag: false,
         enableContextMenu: false,
         enableDropToResize: false,
-        enableEditingMode: true,
+        enableEditingMode: _is0830Slot(),
         enableSorting: false,
         applyFormatterInEditing: true,
         formatter: (value) {
@@ -1832,6 +1871,9 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
       isLoading = true;
       noDataAvailable = false;
     });
+    // Reset nilai edit yang belum tersimpan saat data di-reload
+    _editedKumitateValues.clear();
+    _editedPartValues.clear();
     
     print('Loading data for Line $selectedLine, Contract $selectedContract on ${DateFormat('yyyy-MM-dd').format(selectedDate)}');
 
@@ -2203,112 +2245,178 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
 
   Future<void> _saveToFirebase() async {
     setState(() => isSaving = true);
+    int successCount = 0;
+    int failCount = 0;
     try {
       final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
-      final batch = FirebaseFirestore.instance.batch();
-      
-      // Save Part belumKensa
-      for (final row in partRows) {
-        final processName = row.cells['process_name']!.value.toString().replaceAll(' ', '_');
+      print('[SAVE] Mulai simpan data: date=$dateStr line=$selectedLine contract=$selectedContract');
+
+      // Part rows: ambil dari stateManager jika ada, fallback ke partRows
+      final latestPartRows = (_partStateManager != null && _partStateManager!.rows.isNotEmpty)
+          ? _partStateManager!.rows
+          : partRows;
+
+      print('[SAVE] Jumlah kumitateData: ${kumitateData.length}, partRows: ${latestPartRows.length}');
+      print('[SAVE] EditedKumitate keys: ${_editedKumitateValues.keys.toList()}');
+      print('[SAVE] EditedPart keys: ${_editedPartValues.keys.toList()}');
+
+      // --- Part: belumKensa (dari partRows, merge dengan _editedPartValues) ---
+      for (final row in latestPartRows) {
+        final processName = (row.cells['process_name']?.value?.toString() ?? '').replaceAll(' ', '_');
+        if (processName.isEmpty) continue;
         final docRef = FirebaseFirestore.instance
             .collection('counter_sistem')
             .doc(dateStr)
             .collection(selectedLine)
             .doc('Part')
-            .collection(selectedContract) // Ganti 'Process' dengan selectedContract
+            .collection(selectedContract)
             .doc(processName);
-            
+
         int belumKensa = 0;
-        final cellValue = row.cells['belumKensa']?.value;
-        
-        if (cellValue is int) {
-          belumKensa = cellValue;
-        } else if (cellValue is String) {
-          belumKensa = int.tryParse(cellValue) ?? 0;
-        } else if (cellValue is num) {
-          belumKensa = cellValue.toInt();
+        final editKeyBK = '$processName|belumKensa';
+        if (_editedPartValues.containsKey(editKeyBK)) {
+          final v = _editedPartValues[editKeyBK];
+          belumKensa = v is int ? v : int.tryParse(v?.toString() ?? '') ?? 0;
+        } else {
+          final cellValue = row.cells['belumKensa']?.value;
+          if (cellValue is int) belumKensa = cellValue;
+          else if (cellValue is String) belumKensa = int.tryParse(cellValue) ?? 0;
+          else if (cellValue is num) belumKensa = cellValue.toInt();
         }
-        
-        final updateData = {
-          'belumKensa': belumKensa,
-        };
-        
-        batch.update(docRef, updateData);
+
+        try {
+          await docRef.set({'belumKensa': belumKensa}, SetOptions(merge: true));
+          print('[SAVE] Part OK: $processName belumKensa=$belumKensa');
+          successCount++;
+        } catch (e) {
+          print('[SAVE] Part GAGAL: $processName error=$e');
+          failCount++;
+        }
       }
-      
-      // Save Kumitate stock 20 menit, stock pagi, dan PART
-      for (final row in kumitateRows) {
-        final processName = row.cells['process_name']!.value.toString().replaceAll(' ', '_');
+
+      // --- Kumitate: SELALU dari kumitateData (semua proses), merge dengan _editedKumitateValues ---
+      // Ini memastikan semua proses tersimpan tanpa bergantung pada berapa row yang ter-render di PlutoGrid
+      final filteredKumitate = kumitateData.where((e) => (e['sequence'] ?? 0) != 0).toList();
+      print('[SAVE] Kumitate akan disimpan: ${filteredKumitate.length} proses');
+
+      for (final entry in filteredKumitate) {
+        final processName = (entry['process_name'] ?? '').toString().replaceAll(' ', '_');
+        if (processName.isEmpty) continue;
+
         final docRef = FirebaseFirestore.instance
             .collection('counter_sistem')
             .doc(dateStr)
             .collection(selectedLine)
             .doc('Kumitate')
-            .collection(selectedContract) // Ganti 'Process' dengan selectedContract
+            .collection(selectedContract)
             .doc(processName);
 
-        int stock20min = 0;
-        final cellValue = row.cells['stock_20min']?.value;
-        if (cellValue is int) {
-          stock20min = cellValue;
-        } else if (cellValue is String) {
-          stock20min = int.tryParse(cellValue) ?? 0;
-        } else if (cellValue is num) {
-          stock20min = cellValue.toInt();
+        // Helper: ambil dari editedMap jika ada, fallback ke kumitateData atau PlutoGrid rows
+        int getVal(String field) {
+          final k = '$processName|$field';
+          if (_editedKumitateValues.containsKey(k)) {
+            final v = _editedKumitateValues[k];
+            if (v is int) return v;
+            if (v is num) return v.toInt();
+            if (v is String) return int.tryParse(v) ?? 0;
+          }
+          // Fallback ke PlutoGrid row jika ada
+          final matchRow = kumitateRows.firstWhere(
+            (r) => (r.cells['process_name']?.value?.toString() ?? '').replaceAll(' ', '_') == processName,
+            orElse: () => PlutoRow(cells: {}),
+          );
+          final cellVal = matchRow.cells[field]?.value;
+          if (cellVal is int) return cellVal;
+          if (cellVal is num) return cellVal.toInt();
+          if (cellVal is String) return int.tryParse(cellVal) ?? 0;
+          return 0;
         }
 
-        // Get stock pagi values
+        // stock_20min
+        final stock20min = getVal('stock_20min') != 0
+            ? getVal('stock_20min')
+            : (entry['stock_20min'] as num?)?.toInt() ?? 0;
+
+        // stock_pagi
+        final stockPagiRaw = entry['stock_pagi'] as Map<String, dynamic>? ?? {};
+        final p1 = _editedKumitateValues.containsKey('$processName|stock_pagi_1')
+            ? getVal('stock_pagi_1') : (stockPagiRaw['1'] as num?)?.toInt() ?? 0;
+        final p2 = _editedKumitateValues.containsKey('$processName|stock_pagi_2')
+            ? getVal('stock_pagi_2') : (stockPagiRaw['2'] as num?)?.toInt() ?? 0;
+        final p3 = _editedKumitateValues.containsKey('$processName|stock_pagi_3')
+            ? getVal('stock_pagi_3') : (stockPagiRaw['3'] as num?)?.toInt() ?? 0;
+        final p4 = _editedKumitateValues.containsKey('$processName|stock_pagi_4')
+            ? getVal('stock_pagi_4') : (stockPagiRaw['4'] as num?)?.toInt() ?? 0;
+        final p5 = _editedKumitateValues.containsKey('$processName|stock_pagi_5')
+            ? getVal('stock_pagi_5') : (stockPagiRaw['5'] as num?)?.toInt() ?? 0;
+
         final stockPagi = {
-          '1': row.cells['stock_pagi_1']?.value as int? ?? 0,
-          '2': row.cells['stock_pagi_2']?.value as int? ?? 0,
-          '3': row.cells['stock_pagi_3']?.value as int? ?? 0,
-          '4': row.cells['stock_pagi_4']?.value as int? ?? 0,
-          '5': row.cells['stock_pagi_5']?.value as int? ?? 0,
-          'stock': (row.cells['stock_pagi_1']?.value as int? ?? 0) +
-                  (row.cells['stock_pagi_2']?.value as int? ?? 0) +
-                  (row.cells['stock_pagi_3']?.value as int? ?? 0) +
-                  (row.cells['stock_pagi_4']?.value as int? ?? 0) +
-                  (row.cells['stock_pagi_5']?.value as int? ?? 0),
+          '1': p1, '2': p2, '3': p3, '4': p4, '5': p5,
+          'stock': p1 + p2 + p3 + p4 + p5,
         };
 
-        // PART: logika split part1,part2 berlaku untuk semua baris
-        String partValue = row.cells['part']?.value as String? ?? '';
-        String partValue2 = row.cells['part_2']?.value as String? ?? '';
-        if (partValue.contains(',')) {
-          final values = partValue.split(',');
-          partValue = values.isNotEmpty ? values[0].trim() : '';
-          partValue2 = values.length > 1 ? values[1].trim() : '';
+        // part
+        String part1 = _editedKumitateValues.containsKey('$processName|part')
+            ? (_editedKumitateValues['$processName|part']?.toString() ?? '')
+            : (entry['part'] ?? '').toString();
+        String part2 = _editedKumitateValues.containsKey('$processName|part_2')
+            ? (_editedKumitateValues['$processName|part_2']?.toString() ?? '')
+            : (entry['part_2'] ?? '').toString();
+        if (part1.contains(',')) {
+          final vals = part1.split(',');
+          part1 = vals[0].trim();
+          part2 = vals.length > 1 ? vals[1].trim() : part2;
         }
 
-        final updateData = {
-          'stock_20min': stock20min,
-          'stock_pagi': stockPagi,
-          'part': {
-            'part1': partValue,
-            'part2': partValue2,
-          },
-        };
-        batch.update(docRef, updateData);
+        try {
+          await docRef.set({
+            'stock_20min': stock20min,
+            'stock_pagi': stockPagi,
+            'part': {'part1': part1, 'part2': part2},
+          }, SetOptions(merge: true));
+          print('[SAVE] Kumitate OK: $processName stock_pagi=$stockPagi stock_20min=$stock20min');
+          successCount++;
+        } catch (e) {
+          print('[SAVE] Kumitate GAGAL: $processName error=$e');
+          failCount++;
+        }
       }
-      
-      await batch.commit();
-      
+
+      // Reset edit tracking map setelah save berhasil
+      if (failCount == 0) {
+        _editedKumitateValues.clear();
+        _editedPartValues.clear();
+      }
+
+      print('[SAVE] Selesai. Berhasil: $successCount, Gagal: $failCount');
+
       if (mounted) {
+        final msg = failCount == 0
+            ? 'Data berhasil disimpan!'
+            : 'Sebagian gagal: $successCount berhasil, $failCount gagal. Cek console log.';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Data berhasil disimpan!')),
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: failCount == 0 ? Colors.green : Colors.orange,
+            duration: Duration(seconds: 4),
+          ),
         );
       }
     } catch (e) {
-      print('Error saving data: $e');
+      print('[SAVE] Error fatal: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menyimpan data: $e')),
+          SnackBar(
+            content: Text('Gagal menyimpan data: $e'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 5),
+          ),
         );
       }
     } finally {
       await loadData();
       await _loadTargets();
-      setState(() => isSaving = false);
+      if (mounted) setState(() => isSaving = false);
     }
   }
 
@@ -2815,6 +2923,7 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                       }
                     : null,
                 onChanged: (PlutoGridOnChangedEvent event) {
+                  print('[ONEDIT] title=$title field=${event.column.field} value=${event.value} processName=${event.row.cells['process_name']?.value}');
                   if (event.column.field == 'belumKensa' || 
                       event.column.field == 'stock_20min' ||
                       event.column.field == 'part' ||
@@ -2823,21 +2932,30 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                     final stateManager = title == 'PART' 
                         ? _partStateManager 
                         : _kumitateStateManager;
-                    
+                    final editMap = title == 'PART'
+                        ? _editedPartValues
+                        : _editedKumitateValues;
+
+                    // Simpan nilai terbaru ke tracking map
+                    // Gunakan underscore agar konsisten dengan key saat save
+                    final processName = (event.row.cells['process_name']?.value?.toString() ?? '').replaceAll(' ', '_');
+                    final trackKey = '$processName|${event.column.field}';
+
                     if (stateManager != null) {
+                      final targetCell = event.row.cells[event.column.field];
                       if (event.column.field == 'part' || event.column.field == 'part_2') {
-                        stateManager.changeCellValue(
-                          event.row.cells[event.column.field]!,
-                          event.value.toString(),
-                          notify: false,
-                        );
+                        if (targetCell != null) {
+                          stateManager.changeCellValue(targetCell, event.value.toString(), notify: false);
+                        }
+                        editMap[trackKey] = event.value.toString();
+                        print('[EDITMAP] $trackKey = ${event.value}');
                       } else {
                         final intValue = int.tryParse(event.value.toString()) ?? 0;
-                        stateManager.changeCellValue(
-                          event.row.cells[event.column.field]!,
-                          intValue,
-                          notify: false,
-                        );
+                        if (targetCell != null) {
+                          stateManager.changeCellValue(targetCell, intValue, notify: false);
+                        }
+                        editMap[trackKey] = intValue;
+                        print('[EDITMAP] $trackKey = $intValue');
                       }
 
                       if (event.column.field.startsWith('stock_pagi_') && !event.column.field.endsWith('stock')) {
@@ -2847,15 +2965,26 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                         final pagi4 = event.row.cells['stock_pagi_4']?.value as int? ?? 0;
                         final pagi5 = event.row.cells['stock_pagi_5']?.value as int? ?? 0;
                         final pagiStock = pagi1 + pagi2 + pagi3 + pagi4 + pagi5;
-                        stateManager.changeCellValue(
-                          event.row.cells['stock_pagi_stock']!,
-                          pagiStock,
-                          notify: false,
-                        );
+                        final stockCell = event.row.cells['stock_pagi_stock'];
+                        if (stockCell != null) {
+                          stateManager.changeCellValue(stockCell, pagiStock, notify: false);
+                        }
+                        editMap['$processName|stock_pagi_stock'] = pagiStock;
                       }
-
-                      setState(() {});
+                    } else {
+                      // stateManager null, simpan ke editMap saja
+                      if (event.column.field == 'part' || event.column.field == 'part_2') {
+                        editMap[trackKey] = event.value.toString();
+                      } else {
+                        editMap[trackKey] = int.tryParse(event.value.toString()) ?? 0;
+                      }
                     }
+
+                    // Gunakan addPostFrameCallback agar setState tidak dipanggil
+                    // saat widget tree sedang locked (build/layout sedang berjalan)
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) setState(() {});
+                    });
                   }
                 },
                 onLoaded: (PlutoGridOnLoadedEvent event) {
@@ -2867,7 +2996,10 @@ class _CounterTableScreenState extends State<CounterTableScreen> {
                   
                   event.stateManager.addListener(() {
                     if (!event.stateManager.hasFocus) {
-                      setState(() {});
+                      // Gunakan addPostFrameCallback agar aman dari locked widget tree
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() {});
+                      });
                     }
                   });
                 },

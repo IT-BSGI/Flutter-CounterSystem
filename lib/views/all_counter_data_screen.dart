@@ -19,6 +19,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
   List<PlutoRow> prosesRows = [];
   String? selectedProcessName;
   List<String> processNames = [];
+  List<PlutoColumnGroup> prosesColumnGroups = [];
 
   // Untuk tabel Proses Part (akumulatif 12345 per timeslot)
   List<PlutoColumn> partProsesColumns = [];
@@ -27,9 +28,285 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
   List<String> partProcessNames = [];
   List<PlutoColumnGroup> partProsesColumnGroups = [];
 
+  // Stream subscriptions for auto-refresh
+  StreamSubscription<DocumentSnapshot>? _parentDocSub;
+  StreamSubscription<DocumentSnapshot>? _kumitateDocSub;
+  StreamSubscription<DocumentSnapshot>? _partDocSub;
+  List<StreamSubscription<QuerySnapshot>> _contractSubscriptions = [];
+
+  List<PlutoColumn> kumitateColumns = [];
+  List<PlutoRow> kumitateRows = [];
+  List<PlutoColumnGroup> kumitateColumnGroups = [];
+  
+  List<PlutoColumn> partColumns = [];
+  List<PlutoRow> partRows = [];
+  List<PlutoColumnGroup> partColumnGroups = [];
+  
+  bool isLoading = true;
+  String selectedLine = "A";
+  DateTime selectedDate = DateTime.now();
+  List<Map<String, dynamic>> kumitateData = [];
+  List<Map<String, dynamic>> partData = [];
+  double? dailyTarget;
+  Map<String, double> hourlyTargets = {};
+  bool isTargetLoading = true;
+  bool noDataAvailable = false;
+
+  final List<String> timeSlots = [
+    "08:30", "09:30", "10:30", "11:30", "12:00",
+    "13:00", "14:00", "15:00", "16:00",
+    "17:25", "17:55",
+  ];
+  
+  List<String> visibleTimeSlots = [];
+
+  final Map<String, String> timeRangeMap = {
+    "06:30": "08:30", 
+    "06:45": "08:30", 
+    "07:00": "08:30", 
+    "07:15": "08:30", 
+    "07:30": "08:30", 
+    "07:45": "08:30", 
+    "08:00": "08:30",
+    "08:15": "08:30",
+    "08:30": "09:30",
+    "08:45": "09:30",
+    "09:00": "09:30",
+    "09:15": "09:30",
+    "09:30": "10:30",
+    "09:45": "10:30",
+    "10:00": "10:30",
+    "10:15": "10:30",
+    "10:30": "11:30",
+    "10:45": "11:30",
+    "11:00": "11:30",
+    "11:15": "11:30",
+    "11:30": "12:00",
+    "11:45": "12:00",
+    "12:00": "12:00",
+    "12:15": "13:00",
+    "12:30": "13:00",
+    "12:45": "13:00",
+    "13:00": "14:00",
+    "13:15": "14:00",
+    "13:30": "14:00",
+    "13:45": "14:00",
+    "14:00": "15:00",
+    "14:15": "15:00", 
+    "14:30": "15:00",
+    "14:45": "15:00",
+    "15:00": "16:00",
+    "15:15": "16:00",
+    "15:30": "16:00", 
+    "15:45": "16:00",
+    "16:00": "16:00",
+    "16:15": "17:25",
+    "16:30": "17:25",
+    "16:45": "17:25",
+    "17:00": "17:25",
+    "17:15": "17:25",
+    "17:30": "17:25",
+    "17:45": "17:55",
+    "18:00": "17:55",
+    "18:15": "17:55",
+    "18:30": "17:55",
+    "18:45": "17:55",
+    "19:00": "17:55",
+    "19:15": "17:55",
+    "19:30": "17:55",
+    "19:45": "17:55",
+    "20:00": "17:55",
+  };
+
+  final List<String> partProcessOrder = [
+    "Maemi IN", "Maemi OUT", "Ushiro IN", "Ushiro OUT",
+    "Eri IN", "Eri OUT", "Sode IN", "Sode OUT",
+    "Cuff IN", "Cuff OUT",
+  ];
+
+  final List<String> kumitateProcessOrder = [
+    "Maekata Interlock",
+    "Maekata Jinui",
+    "Maekata Fuse",
+    "Maekata JinuiFuse",
+    "Eri Tsuke",
+    "Pipping Eri Tsuke",
+    "Overlock Eri Tsuke",
+    "Itokiri Eri Tsuke",
+    "Eri Fuse",
+    "Epaulate Tsuke",
+    "Sode Tsuke Interlock",
+    "Karidome Waki",
+    "Deodorant Tape",
+    "Sode Tsuke Honnui",
+    "Iron Sode Tsuke",
+    "Sode Fuse",
+    "Jinui Pocket Samping",
+    "Sode Fuse 1mm",
+    "Sode Fuse 8mm",
+    "Wakinui Interlock",
+    "Kazari Mae",
+    "Anakagari Maetate",
+    "Wakinui Nihonbari",
+    "Loop Tsuke",
+    "Kandome",
+    "Hodoki Waki",
+    "Shirushi Mitsumaki",
+    "Iron Waki",
+    "Jinui Waki",
+    "Waki Fuse",
+    "Sode Guchi Tome",
+    "Sode Guchi Corong",
+    "Surito",
+    "Cuff Tsuke",
+    "Cuff Anakagari",
+    "Kazari Cuff",
+    "Bottan Cuff",
+    "Mitsumaki",
+    "Gazet",
+    "Bottan Tsuke",
+  ];
+
+  final Map<String, String> partProcessHiragana = {
+    "Maemi IN": "まえみ いん",
+    "Maemi OUT": "まえみ あうと",
+    "Ushiro IN": "うしろ いん",
+    "Ushiro OUT": "うしろ あうと",
+    "Eri IN": "えり いん",
+    "Eri OUT": "えり あうと",
+    "Sode IN": "そで いん",
+    "Sode OUT": "そで あうと",
+    "Cuff IN": "かふ いん",
+    "Cuff OUT": "かふ あうと",
+  };
+
+  final List<String> dividedByTwoProcesses = [
+    "Cuff IN", "Cuff OUT", "Sode IN", "Sode OUT"
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Langsung load data tanpa listener dulu
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadInitialData();
+    });
+  }
+
+  Future<void> _loadInitialData() async {
+    setState(() {
+      isLoading = true;
+      isTargetLoading = true;
+    });
+    await _loadTargets();
+    await loadData();
+    _setupListeners(); // Setup listeners setelah data awal dimuat
+    if (mounted) {
+      setState(() {
+        isLoading = false;
+        isTargetLoading = false;
+      });
+    }
+  }
+
+  void _setupListeners() {
+    _cancelAllSubscriptions();
+
+    final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
+    final parentDocRef = FirebaseFirestore.instance.collection('counter_sistem').doc(dateStr);
+
+    // Listen to top-level doc for target/plan changes
+    _parentDocSub = parentDocRef.snapshots().listen((snapshot) async {
+      await _loadTargets(showSpinner: false);
+      await loadData();
+    }, onError: (e) {
+      print('Parent doc subscription error: $e');
+    });
+
+    // Listen to Kumitate parent doc to get contract list and set up contract listeners
+    final kumitateDocRef = FirebaseFirestore.instance
+        .collection('counter_sistem')
+        .doc(dateStr)
+        .collection(selectedLine)
+        .doc('Kumitate');
+
+    _kumitateDocSub = kumitateDocRef.snapshots().listen((snapshot) {
+      List<String> contractCollections = [];
+      if (snapshot.exists) {
+        final raw = snapshot.data();
+        if (raw is Map<String, dynamic>) {
+          final kontrak = raw['Kontrak'];
+          if (kontrak is List) {
+            contractCollections = kontrak.map((e) => e.toString()).toList();
+          }
+        }
+      }
+      if (contractCollections.isEmpty) contractCollections = ['Process'];
+      _setupContractListeners(kumitateDocRef, contractCollections);
+      loadData();
+    }, onError: (e) {
+      print('Kumitate doc subscription error: $e');
+      _setupContractListeners(kumitateDocRef, ['Process']);
+    });
+
+    // Also listen to Part parent doc to catch changes in part Kontrak list
+    final partDocRef = FirebaseFirestore.instance
+        .collection('counter_sistem')
+        .doc(dateStr)
+        .collection(selectedLine)
+        .doc('Part');
+
+    _partDocSub = partDocRef.snapshots().listen((snapshot) {
+      List<String> contractCollections = [];
+      if (snapshot.exists) {
+        final raw = snapshot.data();
+        if (raw is Map<String, dynamic>) {
+          final kontrak = raw['Kontrak'];
+          if (kontrak is List) {
+            contractCollections = kontrak.map((e) => e.toString()).toList();
+          }
+        }
+      }
+      if (contractCollections.isEmpty) contractCollections = ['Process'];
+      _setupContractListeners(partDocRef, contractCollections);
+      loadData();
+    }, onError: (e) {
+      print('Part doc subscription error: $e');
+    });
+  }
+
+  void _setupContractListeners(DocumentReference parentDocRef, List<String> contractCollections) {
+    for (var s in _contractSubscriptions) s.cancel();
+    _contractSubscriptions.clear();
+
+    for (final contractName in contractCollections) {
+      final sub = parentDocRef
+          .collection(contractName)
+          .snapshots()
+          .listen((_) {
+        loadData();
+      }, onError: (e) {
+        print('Contract listener error for $contractName: $e');
+      });
+      _contractSubscriptions.add(sub);
+    }
+  }
+
+  void _cancelAllSubscriptions() {
+    _parentDocSub?.cancel();
+    _parentDocSub = null;
+    _kumitateDocSub?.cancel();
+    _kumitateDocSub = null;
+    _partDocSub?.cancel();
+    _partDocSub = null;
+    for (var s in _contractSubscriptions) {
+      s.cancel();
+    }
+    _contractSubscriptions.clear();
+  }
+
   // Build tabel Proses: timeslot, 1,2,3,4,5, total akumulatif per timeslot
   void _buildProsesTable() {
-    // Kolom: TIME, lalu per line (1-5) grup: Jam, Ak
     prosesColumns = [
       PlutoColumn(
         title: "TIME",
@@ -103,7 +380,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       ],
     ];
 
-    // Group kolom per line
     prosesColumnGroups = [
       for (int i = 1; i <= 5; i++)
         PlutoColumnGroup(
@@ -113,11 +389,9 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         ),
     ];
 
-    // Baris: setiap timeslot, data dari proses terpilih
     prosesRows = [];
     final prosesList = List<Map<String, dynamic>>.from(kumitateData);
     
-    // Urutkan berdasarkan urutan proses yang ditentukan
     prosesList.sort((a, b) {
       final aIndex = kumitateProcessOrder.indexOf(a['process_name'] ?? '');
       final bIndex = kumitateProcessOrder.indexOf(b['process_name'] ?? '');
@@ -126,14 +400,12 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       return aIndex.compareTo(bIndex);
     });
     
-    // Ambil hanya proses dengan sequence != 0 (sesuai tabel kumitate)
     processNames = prosesList
       .where((e) => (e['sequence'] ?? 0) != 0)
       .map((e) => e["process_name"]?.toString() ?? "")
       .where((e) => e.isNotEmpty)
       .toList();
       
-    // Urutkan processNames berdasarkan urutan yang ditentukan
     processNames.sort((a, b) {
       final aIndex = kumitateProcessOrder.indexOf(a);
       final bIndex = kumitateProcessOrder.indexOf(b);
@@ -142,7 +414,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       return aIndex.compareTo(bIndex);
     });
     
-    // Pastikan selectedProcessName selalu valid
     if (selectedProcessName == null || !processNames.contains(selectedProcessName)) {
       selectedProcessName = processNames.isNotEmpty ? processNames.first : null;
     }
@@ -152,7 +423,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       orElse: () => {},
     );
     
-    // Tentukan visibleTimeSlots untuk proses: hanya timeslot yang ada data di proses terpilih
     Set<String> slotsWithData = {};
     for (final time in timeSlots) {
       bool hasData = false;
@@ -173,10 +443,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       final cells = <String, PlutoCell>{};
       cells["time_slot"] = PlutoCell(value: time);
       for (int i = 1; i <= 5; i++) {
-        // Jam: hanya perolehan di jam itu saja
         final jamRaw = proses["${time}_$i"];
         final jamValue = jamRaw == null ? 0 : (jamRaw is int ? jamRaw : int.tryParse(jamRaw.toString()) ?? 0);
-        // Ak: akumulatif sampai jam itu
         int akumulatif = 0;
         for (final t in visibleTimeSlotsProses) {
           final val = proses["${t}_$i"];
@@ -196,9 +464,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
   }
 
   // Build tabel Proses Part: timeslot, per line (1-3) Jam & Ak
-  // Data Part menyimpan ${time}_1, ${time}_2, ${time}_3 dan ${time}_cumulative
   void _buildPartProsesTable() {
-    // Kolom: TIME, lalu per line (1-3) grup: Jam, Ak
     partProsesColumns = [
       PlutoColumn(
         title: "TIME",
@@ -272,7 +538,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       ],
     ];
 
-    // Group kolom per line (1-3)
     partProsesColumnGroups = [
       for (int i = 1; i <= 3; i++)
         PlutoColumnGroup(
@@ -282,13 +547,11 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         ),
     ];
 
-    // Ambil semua process_name dari partData
     partProcessNames = partData
         .map((e) => e["process_name"]?.toString() ?? "")
         .where((e) => e.isNotEmpty)
         .toList();
 
-    // Urutkan berdasarkan partProcessOrder
     partProcessNames.sort((a, b) {
       final aIndex = partProcessOrder.indexOf(a);
       final bIndex = partProcessOrder.indexOf(b);
@@ -297,7 +560,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       return aIndex.compareTo(bIndex);
     });
 
-    // Pastikan selectedPartProcessName selalu valid
     if (selectedPartProcessName == null || !partProcessNames.contains(selectedPartProcessName)) {
       selectedPartProcessName = partProcessNames.isNotEmpty ? partProcessNames.first : null;
     }
@@ -307,7 +569,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       orElse: () => {},
     );
 
-    // Tentukan visibleTimeSlots: hanya timeslot yang ada data per-line (1-3) > 0
     Set<String> slotsWithData = {};
     for (final time in visibleTimeSlots) {
       for (int i = 1; i <= 3; i++) {
@@ -320,22 +581,18 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     }
     final visibleTimeSlotsPartProses = visibleTimeSlots.where((t) => slotsWithData.contains(t)).toList();
 
-    // Apakah proses ini dibagi 2
     final isDividedByTwo = dividedByTwoProcesses.contains(selectedPartProcessName);
 
-    // Build rows
     partProsesRows = [];
     for (final time in visibleTimeSlotsPartProses) {
       final cells = <String, PlutoCell>{};
       cells["time_slot"] = PlutoCell(value: time);
 
       for (int i = 1; i <= 3; i++) {
-        // Jam: perolehan di timeslot ini untuk line i
         final jamRaw = partProses["${time}_$i"];
         int jamInt = jamRaw is int ? jamRaw : int.tryParse(jamRaw?.toString() ?? '') ?? 0;
         if (isDividedByTwo) jamInt = (jamInt / 2).floor();
 
-        // Ak: akumulatif line i dari awal hingga timeslot ini
         int akumulatif = 0;
         for (final t in visibleTimeSlotsPartProses) {
           final val = partProses["${t}_$i"];
@@ -356,11 +613,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     this.partProsesRows = partProsesRows;
     this.partProsesColumnGroups = partProsesColumnGroups;
   }
-  
-  List<PlutoColumnGroup> prosesColumnGroups = [];
-  
-  List<PlutoColumnGroup> partColumnGroups = [];
-  
+
   // Fungsi untuk menentukan warna baris PART
   Color? getPartRowColor(String processName) {
     switch (processName) {
@@ -383,181 +636,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         return null;
     }
   }
-  
-  List<PlutoColumn> kumitateColumns = [];
-  List<PlutoRow> kumitateRows = [];
-  List<PlutoColumnGroup> kumitateColumnGroups = [];
-  
-  List<PlutoColumn> partColumns = [];
-  List<PlutoRow> partRows = [];
-  
-  bool isLoading = true;
-  String selectedLine = "A";
-  DateTime selectedDate = DateTime.now();
-  List<Map<String, dynamic>> kumitateData = [];
-  List<Map<String, dynamic>> partData = [];
-  double? dailyTarget;
-  Map<String, double> hourlyTargets = {};
-  bool isTargetLoading = true;
-  bool noDataAvailable = false;
-
-  final List<String> timeSlots = [
-    "08:30", "09:30", "10:30", "11:30", "12:00",
-    "13:00", "14:00", "15:00", "16:00",
-    // Overtime slots (start at 17:25)
-    "17:25", "17:55",
-  ];
-  
-  List<String> visibleTimeSlots = [];
-
-  final Map<String, String> timeRangeMap = {
-    "06:30": "08:30", 
-    "06:45": "08:30", 
-    "07:00": "08:30", 
-    "07:15": "08:30", 
-    "07:30": "08:30", 
-    "07:45": "08:30", 
-    "08:00": "08:30",
-    "08:15": "08:30",
-
-    "08:30": "09:30",
-    "08:45": "09:30",
-    "09:00": "09:30",
-    "09:15": "09:30",
-
-    "09:30": "10:30",
-    "09:45": "10:30",
-    "10:00": "10:30",
-    "10:15": "10:30",
-
-    "10:30": "11:30",
-    "10:45": "11:30",
-    "11:00": "11:30",
-    "11:15": "11:30",
-
-    "11:30": "12:00",
-    "11:45": "12:00",
-    "12:00": "12:00",
-
-    "12:15": "13:00",
-    "12:30": "13:00",
-    "12:45": "13:00",
-
-    "13:00": "14:00",
-    "13:15": "14:00",
-    "13:30": "14:00",
-    "13:45": "14:00",
-
-    "14:00": "15:00",
-    "14:15": "15:00", 
-    "14:30": "15:00",
-    "14:45": "15:00",
-
-    "15:00": "16:00",
-    "15:15": "16:00",
-    "15:30": "16:00", 
-    "15:45": "16:00",
-    "16:00": "16:00",
-
-    // Map post-16:00 minutes into overtime slots
-    "16:15": "17:25",
-    "16:30": "17:25",
-    "16:45": "17:25",
-    "17:00": "17:25",
-    "17:15": "17:25",
-    "17:30": "17:25",
-
-    "17:45": "17:55",
-    "18:00": "17:55",
-    "18:15": "17:55",
-    "18:30": "17:55",
-    "18:45": "17:55",
-    "19:00": "17:55",
-    "19:15": "17:55",
-    "19:30": "17:55",
-    "19:45": "17:55",
-    "20:00": "17:55",
-  };
-
-  final List<String> partProcessOrder = [
-    "Maemi IN", "Maemi OUT", "Ushiro IN", "Ushiro OUT",
-    "Eri IN", "Eri OUT", "Sode IN", "Sode OUT",
-    "Cuff IN", "Cuff OUT",
-  ];
-
-  // Urutan proses Kumitate yang diinginkan
-  final List<String> kumitateProcessOrder = [
-    "Maekata Interlock",
-    "Maekata Jinui",
-    "Maekata Fuse",
-    "Maekata JinuiFuse",
-    "Eri Tsuke",
-    "Pipping Eri Tsuke",
-    "Overlock Eri Tsuke",
-    "Itokiri Eri Tsuke",
-    "Eri Fuse",
-    "Epaulate Tsuke",
-    "Sode Tsuke Interlock",
-    "Karidome Waki",
-    "Deodorant Tape",
-    "Sode Tsuke Honnui",
-    "Iron Sode Tsuke",
-    "Sode Fuse",
-    "Jinui Pocket Samping",
-    "Sode Fuse 1mm",
-    "Sode Fuse 8mm",
-    "Wakinui Interlock",
-    "Kazari Mae",
-    "Anakagari Maetate",
-    "Wakinui Nihonbari",
-    "Loop Tsuke",
-    "Kandome",
-    "Hodoki Waki",
-    "Shirushi Mitsumaki",
-    "Iron Waki",
-    "Jinui Waki",
-    "Waki Fuse",
-    "Sode Guchi Tome",
-    "Sode Guchi Corong",
-    "Surito",
-    "Cuff Tsuke",
-    "Cuff Anakagari",
-    "Kazari Cuff",
-    "Bottan Cuff",
-    "Mitsumaki",
-    "Gazet",
-    "Bottan Tsuke",
-  ];
-
-  // Map nama process ke huruf Jepang (hiragana)
-  final Map<String, String> partProcessHiragana = {
-    "Maemi IN": "まえみ いん",
-    "Maemi OUT": "まえみ あうと",
-    "Ushiro IN": "うしろ いん",
-    "Ushiro OUT": "うしろ あうと",
-    "Eri IN": "えり いん",
-    "Eri OUT": "えり あうと",
-    "Sode IN": "そで いん",
-    "Sode OUT": "そで あうと",
-    "Cuff IN": "かふ いん",
-    "Cuff OUT": "かふ あうと",
-  };
-
-  final List<String> dividedByTwoProcesses = [
-    "Cuff IN", "Cuff OUT", "Sode IN", "Sode OUT"
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _setupAutoRefresh(showFullLoading: true);
-  }
-
-  // Stream subscriptions for auto-refresh
-  StreamSubscription<DocumentSnapshot>? _parentDocSub;
-  StreamSubscription<DocumentSnapshot>? _kumitateDocSub;
-  StreamSubscription<DocumentSnapshot>? _partDocSub;
-  List<StreamSubscription<QuerySnapshot>> _contractSubscriptions = [];
 
   Future<void> _loadTargets({bool showSpinner = false}) async {
     if (showSpinner) setState(() => isTargetLoading = true);
@@ -571,7 +649,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         final data = doc.data()!;
         final targetMap = data['target_map_$selectedLine'] as Map<String, dynamic>? ?? {};
 
-        // Inisialisasi hourly targets menggunakan label yang sama dengan `timeSlots`
         Map<String, double> calculatedHourlyTargets = {
           for (var s in timeSlots) s: 0.0,
         };
@@ -579,7 +656,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         double totalDailyTarget = 0.0;
 
         if (targetMap.isNotEmpty) {
-          // Ekstrak style data (kecuali overtime)
           List<Map<String, dynamic>> styles = [];
           targetMap.forEach((key, value) {
             if (key != 'overtime' && value is Map) {
@@ -591,20 +667,12 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
             }
           });
 
-          // Urutkan styles berdasarkan key (style1, style2, dll)
           styles.sort((a, b) => a['key'].compareTo(b['key']));
 
-          // Hitung target per slot untuk jam kerja normal.
-          // Gunakan label `timeSlots` untuk kunci, dan alokasikan total productive seconds (8 jam = 28800s)
-          // secara merata ke semua normal slots (non-overtime) agar perubahan timeslot tetap sinkron.
-          // Overtime slots are now 17:25 and 17:55 only
           List<String> overtimeTimeSlots = ['17:25', '17:55'];
           List<String> normalTimeSlots = timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
           int currentTimeSlotIndex = 0;
 
-          // Compute actual available seconds per normal slot by intersecting slot interval
-          // with productive periods (07:30-12:00 and 12:30-16:00). This ensures slots
-          // that are 30-min are handled correctly and allocation by time_perpcs is accurate.
           DateTime parseTime(String t) {
             final parts = t.split(':');
             return DateTime(2000, 1, 1, int.parse(parts[0]), int.parse(parts[1]));
@@ -614,9 +682,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           DateTime morningEnd = DateTime(2000, 1, 1, 12, 0);
           DateTime afternoonStart = DateTime(2000, 1, 1, 12, 30);
           DateTime afternoonEnd = DateTime(2000, 1, 1, 16, 1);
-            // Total productive seconds across morning and afternoon (used as a fallback)
-            // Note: afternoonEnd is 16:01 to include the full 16:00 hour
-            double productiveSeconds = morningEnd.difference(morningStart).inSeconds.toDouble()
+          
+          double productiveSeconds = morningEnd.difference(morningStart).inSeconds.toDouble()
               + (afternoonEnd.difference(afternoonStart).inSeconds - 60).toDouble();
 
           final Map<String, double> slotRemainingSeconds = {};
@@ -631,19 +698,16 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
             }
 
             double avail = 0.0;
-            // overlap with morning
             final overlapStart1 = start.isAfter(morningStart) ? start : morningStart;
             final overlapEnd1 = end.isBefore(morningEnd) ? end : morningEnd;
             if (overlapEnd1.isAfter(overlapStart1)) {
               avail += overlapEnd1.difference(overlapStart1).inSeconds.toDouble();
             }
-            // overlap with afternoon
             final overlapStart2 = start.isAfter(afternoonStart) ? start : afternoonStart;
             final overlapEnd2 = end.isBefore(afternoonEnd) ? end : afternoonEnd;
             if (overlapEnd2.isAfter(overlapStart2)) {
               avail += overlapEnd2.difference(overlapStart2).inSeconds.toDouble();
             }
-
             slotRemainingSeconds[endLabel] = avail;
           }
 
@@ -653,21 +717,16 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
             if (timePerPcs <= 0) continue;
 
-            // Alokasikan potongan style ke slot saat ini dan selanjutnya berdasarkan sisa detik
             while (remainingQuantity > 0 && currentTimeSlotIndex < normalTimeSlots.length) {
               final currentTimeSlot = normalTimeSlots[currentTimeSlotIndex];
               double slotSec = slotRemainingSeconds[currentTimeSlot] ?? (productiveSeconds / (normalTimeSlots.isNotEmpty ? normalTimeSlots.length : 1));
 
               if (slotSec <= 1e-9) {
-                // Kalau slot habis, lanjut ke slot berikutnya
                 currentTimeSlotIndex++;
                 continue;
               }
 
-              // Berapa pcs yang bisa diproduksi pada sisa detik slot ini
               final possiblePieces = slotSec / timePerPcs;
-
-              // Jika tidak bisa memproduksi satupun (timePerPcs > slotSec sangat besar), maju ke slot berikutnya
               if (possiblePieces <= 1e-9) {
                 currentTimeSlotIndex++;
                 continue;
@@ -679,50 +738,34 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               remainingQuantity -= allocated;
               totalDailyTarget += allocated;
 
-              // Kurangi sisa detik slot
               slotSec -= allocated * timePerPcs;
               slotRemainingSeconds[currentTimeSlot] = slotSec;
 
-              // Jika slot habis, pindah ke slot berikutnya; jika tidak, artinya style habis
-              if (slotSec <= 1e-9) {
-                currentTimeSlotIndex++;
-              }
+              if (slotSec <= 1e-9) currentTimeSlotIndex++;
             }
 
-            // Jika masih ada sisa quantity tapi waktu normal sudah habis, hentikan proses
             if (remainingQuantity > 0 && currentTimeSlotIndex >= normalTimeSlots.length) {
               break;
             }
           }
 
-          // Hitung overtime
           if (targetMap.containsKey('overtime')) {
             final overtimeData = targetMap['overtime'] as Map<String, dynamic>;
             double overtimeQuantity = (overtimeData['quantity'] as num?)?.toDouble() ?? 0.0;
             double overtimeTimePerPcs = (overtimeData['time_perpcs'] as num?)?.toDouble() ?? 0.0;
 
             if (overtimeTimePerPcs > 0 && overtimeQuantity > 0) {
-              // Use overtime slots defined above (30-min each)
               List<String> overtimeTimeSlots = ['16:25', '16:55', '17:25', '17:55'];
               double remainingOvertime = overtimeQuantity;
-
-              // Inisialisasi sisa detik overtime per slot (30 menit per overtime slot)
               final Map<String, double> overtimeSlotSec = { for (var s in overtimeTimeSlots) s: 1800.0 };
-
               int otIndex = 0;
               while (remainingOvertime > 0 && otIndex < overtimeTimeSlots.length) {
                 final slot = overtimeTimeSlots[otIndex];
                 double slotSec = overtimeSlotSec[slot] ?? 3600.0;
-                if (slotSec <= 1e-9) {
-                  otIndex++;
-                  continue;
-                }
+                if (slotSec <= 1e-9) { otIndex++; continue; }
 
                 final possiblePieces = slotSec / overtimeTimePerPcs;
-                if (possiblePieces <= 1e-9) {
-                  otIndex++;
-                  continue;
-                }
+                if (possiblePieces <= 1e-9) { otIndex++; continue; }
 
                 final allocated = possiblePieces >= remainingOvertime ? remainingOvertime : possiblePieces;
                 calculatedHourlyTargets[slot] = (calculatedHourlyTargets[slot] ?? 0.0) + allocated;
@@ -737,11 +780,9 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
             }
           }
         } else {
-          // Fallback ke target lama jika tidak ada mapping
           final target = data['target_$selectedLine'];
           if (target is num) {
             totalDailyTarget = target.toDouble();
-            // Distribusikan total daily target ke normal slots (non-overtime)
             List<String> overtimeTimeSlots = ['16:25', '16:55', '17:25', '17:55'];
             final normalSlots = timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
             final perSlot = normalSlots.isNotEmpty ? totalDailyTarget / normalSlots.length : 0.0;
@@ -768,10 +809,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     }
   }
 
-  // METODE YANG SAMA PERSIS DENGAN counter_table_screen.dart
   Future<List<Map<String, dynamic>>> fetchCounterData(String date, String line, String type) async {
     try {
-      // Dapatkan semua kontrak yang tersedia
       final parentDocRef = FirebaseFirestore.instance
           .collection('counter_sistem')
           .doc(date)
@@ -785,7 +824,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         return [];
       }
 
-      // Ambil semua kontrak yang tersedia
       final kontrakArray = parentDoc.data()?['Kontrak'] as List<dynamic>?;
       final contractNames = (kontrakArray ?? ['Process'])
           .where((item) => item != null && item.toString().isNotEmpty)
@@ -799,11 +837,9 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
       print('Processing contracts for $type: $contractNames');
 
-      // Map untuk menggabungkan data dari semua kontrak
       final Map<String, Map<String, dynamic>> mergedData = {};
-  final maxLines = type == 'Part' ? 3 : 5;
+      final maxLines = type == 'Part' ? 3 : 5;
 
-      // Loop melalui semua kontrak dan gabungkan data
       for (final contract in contractNames) {
         final processRef = FirebaseFirestore.instance
             .collection('counter_sistem')
@@ -826,7 +862,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           final part1 = partData is String ? partData : partData['part1'] ?? "";
           final part2 = partData is String ? "" : partData['part2'] ?? "";
 
-          // Inisialisasi data proses jika belum ada
           if (!mergedData.containsKey(processName)) {
             mergedData[processName] = {
               "process_name": processName,
@@ -839,10 +874,9 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               "part": part1,
               "part_2": part2,
               "type": type,
-              "raw_data": {}, // Simpan raw data untuk processing
+              "raw_data": {},
             };
 
-            // Inisialisasi data timeslot
             for (final time in timeSlots) {
               mergedData[processName]!["${time}_cumulative"] = 0;
               for (int i = 1; i <= maxLines; i++) {
@@ -851,41 +885,35 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
             }
           }
 
-          // Simpan raw data untuk processing
           mergedData[processName]!["raw_data_$contract"] = processData;
         }
       }
 
-      // Process data untuk setiap proses yang sudah digabungkan
       for (final processName in mergedData.keys) {
         final process = mergedData[processName]!;
-  final maxLines = process["type"] == 'Part' ? 3 : 5;
+        final maxLines = process["type"] == 'Part' ? 3 : 5;
 
         Map<String, int> cumulativeData = {};
         for (final time in timeSlots) {
           cumulativeData[time] = 0;
         }
 
-        // Process semua kontrak untuk proses ini
         for (final contract in contractNames) {
           final rawDataKey = "raw_data_$contract";
           if (!process.containsKey(rawDataKey)) continue;
 
           final processData = process[rawDataKey] as Map<String, dynamic>;
 
-          // Tambahkan belumKensa
           final belumKensa = processData['belumKensa'] is String 
               ? int.tryParse(processData['belumKensa'] as String) ?? 0
               : (processData['belumKensa'] as num?)?.toInt() ?? 0;
           process["belumKensa"] = (process["belumKensa"] as int) + belumKensa;
 
-          // Tambahkan stock_20min
           final stock20min = processData['stock_20min'] is String 
               ? int.tryParse(processData['stock_20min'] as String) ?? 0
               : (processData['stock_20min'] as num?)?.toInt() ?? 0;
           process["stock_20min"] = (process["stock_20min"] as int) + stock20min;
 
-          // Tambahkan stock_pagi
           final stockPagi = processData['stock_pagi'] as Map<String, dynamic>? ?? {
             '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, 'stock': 0
           };
@@ -896,7 +924,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                 (currentVal is int ? currentVal : 0) + (newVal is int ? newVal : int.tryParse(newVal.toString()) ?? 0);
           }
 
-          // Hitung stock pagi total
           final stockPagiMap = process["stock_pagi"] as Map<String, dynamic>;
           stockPagiMap['stock'] = 
               (stockPagiMap['1'] as int) + 
@@ -905,7 +932,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               (stockPagiMap['4'] as int) + 
               (stockPagiMap['5'] as int);
 
-          // Process data timeslot - SAMA PERSIS DENGAN counter_table_screen.dart
           processData.forEach((key, value) {
             if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && 
                 key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
@@ -921,7 +947,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                       : int.tryParse(countValue.toString()) ?? 0;
                   slotTotal += count;
                   
-                  // Tambahkan ke data per line
                   process["${mappedTime}_$i"] = (process["${mappedTime}_$i"] as int) + count;
                 }
                 cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
@@ -930,7 +955,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           });
         }
 
-        // Hitung cumulative akhir - SAMA PERSIS DENGAN counter_table_screen.dart
         Map<String, int> finalCumulative = {};
         int currentCumulative = 0;
         
@@ -940,17 +964,14 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           process["${time}_cumulative"] = currentCumulative;
         }
 
-        // Hapus raw data yang sudah tidak diperlukan
         for (final contract in contractNames) {
           final rawDataKey = "raw_data_$contract";
           process.remove(rawDataKey);
         }
       }
 
-      // Konversi map ke list
       List<Map<String, dynamic>> processList = mergedData.values.toList();
 
-      // Urutkan data - SAMA PERSIS DENGAN counter_table_screen.dart
       if (type == 'Part') {
         processList.sort((a, b) {
           final aIndex = partProcessOrder.indexOf(a['process_name']);
@@ -1098,7 +1119,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         renderer: (rendererContext) {
           final part1 = rendererContext.cell.value?.toString() ?? '';
           final part2 = rendererContext.row.cells['part_2']?.value?.toString() ?? '';
-          // Target Part selalu 2x target jam PERTAMA (bukan per-jam masing-masing)
           final firstSlot = visibleTimeSlots.isNotEmpty ? visibleTimeSlots.first : (timeSlots.isNotEmpty ? timeSlots.first : '08:30');
           final targetPerJam = hourlyTargets.isNotEmpty ? ((hourlyTargets[firstSlot] ?? hourlyTargets.values.first) * 2) : 0;
           
@@ -1259,8 +1279,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         cellPadding: EdgeInsets.zero,
         renderer: (rendererContext) {
           final value = rendererContext.cell.value?.toString() ?? '';
-          // Target Part selalu 2x target jam PERTAMA (bukan jam slot saat ini)
-          // Ini berlaku juga untuk slot 12:00 dan 13:00 yang hanya 30 menit
           final firstSlot = visibleTimeSlots.isNotEmpty ? visibleTimeSlots.first : (timeSlots.isNotEmpty ? timeSlots.first : '08:30');
           final firstHourTarget = hourlyTargets[firstSlot] ?? 0.0;
           final partTarget = firstHourTarget * 2;
@@ -1552,7 +1570,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     kumitateRows = [];
     final filteredKumitateData = kumitateData.where((e) => (e['sequence'] ?? 0) != 0).toList();
     
-    // Urutkan berdasarkan urutan proses
     filteredKumitateData.sort((a, b) {
       final aIndex = kumitateProcessOrder.indexOf(a['process_name'] ?? '');
       final bIndex = kumitateProcessOrder.indexOf(b['process_name'] ?? '');
@@ -1663,21 +1680,17 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
             }
           }
 
-          // Overtime slots (we treat 17:25 and 17:55 specially)
           final List<String> overtimeSlots = ['17:25', '17:55'];
           final bool isOvertimeSlot = overtimeSlots.contains(time);
 
           if (i == 0) {
-            // First row always 0
             cells["${time}_stock"] = PlutoCell(value: 0);
           } else {
             if (isOvertimeSlot) {
-              // If there's no cumulative at 16:00, assume process finished before overtime → 0 stock
               bool hasDataAt1600 = (entry["16:00_cumulative"] ?? 0) != 0;
               if (!hasDataAt1600) {
                 cells["${time}_stock"] = PlutoCell(value: 0);
               } else {
-                // Use latest available cumulative at or before the slot for previous and current processes
                 final previousProcess = filteredKumitateData[i - 1];
 
                 int findLatestCumulative(Map<String, dynamic> proc, String targetTime) {
@@ -1706,9 +1719,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                 cells["${time}_stock"] = PlutoCell(value: stockValue);
               }
             } else {
-              // Non-overtime slot
               if (!hasDataInThisTimeSlot) {
-                // No data at this slot → display '-' (no data)
                 cells["${time}_stock"] = PlutoCell(value: '-');
               } else {
                 int previousCumulative = 0;
@@ -1947,7 +1958,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       kumitateData = results[0];
       partData = results[1];
 
-      // Tentukan visibleTimeSlots: hanya timeslot yang ada data di salah satu proses
       Set<String> slots = {};
       for (final data in [...kumitateData, ...partData]) {
         for (final slot in timeSlots) {
@@ -1981,124 +1991,10 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         partData = [];
       });
     } finally {
-      if (showLoading) setState(() => isLoading = false);
-    }
-  }
-
-  void _cancelAllSubscriptions() {
-    _parentDocSub?.cancel();
-    _parentDocSub = null;
-    _kumitateDocSub?.cancel();
-    _kumitateDocSub = null;
-    _partDocSub?.cancel();
-    _partDocSub = null;
-    for (var s in _contractSubscriptions) {
-      s.cancel();
-    }
-    _contractSubscriptions.clear();
-  }
-
-  void _setupContractListeners(DocumentReference parentDocRef, List<String> contractCollections) {
-    // cancel previous contract listeners
-    for (var s in _contractSubscriptions) s.cancel();
-    _contractSubscriptions.clear();
-
-    for (final contractName in contractCollections) {
-      final sub = parentDocRef
-          .collection(contractName)
-          .snapshots()
-          .listen((_) {
-        // On any change in contract subcollection, reload merged data
-        loadData();
-      }, onError: (e) {
-        print('Contract listener error for $contractName: $e');
-      });
-
-      _contractSubscriptions.add(sub);
-    }
-  }
-
-  void _setupAutoRefresh({bool showFullLoading = false}) {
-    // Cancel existing
-    _cancelAllSubscriptions();
-
-    if (showFullLoading) {
-      setState(() {
-        isLoading = true;
-      });
-    }
-
-    final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
-    final parentDocRef = FirebaseFirestore.instance.collection('counter_sistem').doc(dateStr);
-
-    // Listen to top-level doc for target/plan changes
-    _parentDocSub = parentDocRef.snapshots().listen((snapshot) async {
-      // Reload targets when parent doc changes (no spinner)
-      await _loadTargets(showSpinner: false);
-      // Also reload all data (no full-screen loader)
-      await loadData();
-    }, onError: (e) {
-      print('Parent doc subscription error: $e');
-    });
-
-    // Listen to Kumitate parent doc to get contract list and set up contract listeners
-    final kumitateDocRef = FirebaseFirestore.instance
-        .collection('counter_sistem')
-        .doc(dateStr)
-        .collection(selectedLine)
-        .doc('Kumitate');
-
-    _kumitateDocSub = kumitateDocRef.snapshots().listen((snapshot) {
-      List<String> contractCollections = [];
-      if (snapshot.exists) {
-        final raw = snapshot.data();
-        if (raw is Map<String, dynamic>) {
-          final kontrak = raw['Kontrak'];
-          if (kontrak is List) {
-            contractCollections = kontrak.map((e) => e.toString()).toList();
-          }
-        }
+      if (showLoading && mounted) {
+        setState(() => isLoading = false);
       }
-
-      if (contractCollections.isEmpty) contractCollections = ['Process'];
-
-      _setupContractListeners(kumitateDocRef, contractCollections);
-      // ensure UI has up-to-date data
-      loadData();
-    }, onError: (e) {
-      print('Kumitate doc subscription error: $e');
-      _setupContractListeners(kumitateDocRef, ['Process']);
-    });
-
-    // Also listen to Part parent doc to catch changes in part Kontrak list
-    final partDocRef = FirebaseFirestore.instance
-        .collection('counter_sistem')
-        .doc(dateStr)
-        .collection(selectedLine)
-        .doc('Part');
-
-    _partDocSub = partDocRef.snapshots().listen((snapshot) {
-      List<String> contractCollections = [];
-      if (snapshot.exists) {
-        final raw = snapshot.data();
-        if (raw is Map<String, dynamic>) {
-          final kontrak = raw['Kontrak'];
-          if (kontrak is List) {
-            contractCollections = kontrak.map((e) => e.toString()).toList();
-          }
-        }
-      }
-      if (contractCollections.isEmpty) contractCollections = ['Process'];
-
-      // For parts we also want to listen to their contract subcollections
-      _setupContractListeners(partDocRef, contractCollections);
-      loadData();
-    }, onError: (e) {
-      print('Part doc subscription error: $e');
-    });
-
-    // initial load (will also be triggered by snapshots, but do it now)
-    _loadTargets(showSpinner: showFullLoading).then((_) => loadData(showLoading: showFullLoading));
+    }
   }
 
   Widget buildChart(String processName, String type) {
@@ -2109,7 +2005,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     ];
 
     final extendedTimeSlots = ["0", ...timeSlots];
-  final maxLines = type == 'Part' ? 3 : 5;
+    final maxLines = type == 'Part' ? 3 : 5;
 
     final lineBarsData = <LineChartBarData>[];
     final activeLineNums = <int>[];
@@ -2274,7 +2170,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       final excelFile = excel.Excel.createExcel();
       final sheet = excelFile['Sheet1'];
 
-      // Header row
       sheet.appendRow([
         excel.TextCellValue('TYPE'), 
         excel.TextCellValue('PROCESS'),
@@ -2290,7 +2185,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         excel.TextCellValue('Stock')
       ]);
 
-      // Kumitate data
       for (final row in kumitateRows) {
         sheet.appendRow([
           excel.TextCellValue('Kumitate'),
@@ -2308,7 +2202,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         ]);
       }
 
-      // Part data
       for (final row in partRows) {
         sheet.appendRow([
           excel.TextCellValue('Part'),
@@ -2332,7 +2225,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         ]);
       }
 
-      // Save file
       final bytes = excelFile.save()!;
       final dateStr = DateFormat('yyyyMMdd').format(selectedDate);
       final fileName = 'Counter_Data_Line${selectedLine}_$dateStr.xlsx';
@@ -2399,6 +2291,11 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               });
               await _loadTargets(showSpinner: true);
               await loadData(showLoading: true);
+              if (mounted) {
+                setState(() {
+                  isTargetLoading = false;
+                });
+              }
             },
           ),
           SizedBox(width: 16),
@@ -2451,14 +2348,22 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                                   value: line,
                                   child: Text('Line $line'),
                                 )).toList(),
-                                onChanged: (value) {
+                                onChanged: (value) async {
                                   if (value == null) return;
                                   setState(() {
                                     selectedLine = value;
+                                    isLoading = true;
                                     noDataAvailable = false;
                                   });
-                                  // Reconfigure streams for the new line
-                                  _setupAutoRefresh();
+                                  _cancelAllSubscriptions();
+                                  await _loadTargets(showSpinner: true);
+                                  await loadData(showLoading: true);
+                                  _setupListeners();
+                                  if (mounted) {
+                                    setState(() {
+                                      isLoading = false;
+                                    });
+                                  }
                                 },
                               ),
                             ),
@@ -2500,12 +2405,21 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                                             ),
                                           ))
                                       .toList(),
-                                  onChanged: (value) {
+                                  onChanged: (value) async {
+                                    if (value == null) return;
                                     setState(() {
-                                      selectedLine = value!;
+                                      selectedLine = value;
+                                      isLoading = true;
                                     });
-                                    // Reconfigure streams for the new line
-                                    _setupAutoRefresh();
+                                    _cancelAllSubscriptions();
+                                    await _loadTargets(showSpinner: true);
+                                    await loadData(showLoading: true);
+                                    _setupListeners();
+                                    if (mounted) {
+                                      setState(() {
+                                        isLoading = false;
+                                      });
+                                    }
                                   },
                                   icon: Icon(Icons.arrow_drop_down, size: 20, color: Colors.blue.shade600),
                                   style: TextStyle(color: Colors.black),
@@ -2671,9 +2585,21 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     if (picked != null && picked != selectedDate) {
       setState(() {
         selectedDate = picked;
+        isLoading = true;
+        isTargetLoading = true;
       });
-      // Reconfigure streams for the new date (will trigger loading)
-      _setupAutoRefresh();
+      
+      _cancelAllSubscriptions();
+      await _loadTargets(showSpinner: true);
+      await loadData(showLoading: true);
+      _setupListeners();
+      
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+          isTargetLoading = false;
+        });
+      }
     }
   }
 
