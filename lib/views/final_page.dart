@@ -67,7 +67,8 @@ class _FinalPageState extends State<FinalPage> {
       ),
     ];
     columnGroups = [
-      PlutoColumnGroup(title: '', fields: ['line'], backgroundColor: Colors.blue.shade300),
+      PlutoColumnGroup(
+          title: '', fields: ['line'], backgroundColor: Colors.blue.shade300),
     ];
 
     // Optimasi: Ambil semua dokumen target harian untuk bulan ini sekaligus
@@ -81,8 +82,11 @@ class _FinalPageState extends State<FinalPage> {
       // Query semua dokumen counter_sistem untuk bulan ini
       final snap = await FirebaseFirestore.instance
           .collection('counter_sistem')
-          .where(FieldPath.documentId, isGreaterThanOrEqualTo: DateFormat('yyyy-MM-dd').format(startDate))
-          .where(FieldPath.documentId, isLessThanOrEqualTo: DateFormat('yyyy-MM-dd').format(endDate))
+          .where(FieldPath.documentId,
+              isGreaterThanOrEqualTo:
+                  DateFormat('yyyy-MM-dd').format(startDate))
+          .where(FieldPath.documentId,
+              isLessThanOrEqualTo: DateFormat('yyyy-MM-dd').format(endDate))
           .get();
       final docMap = {for (var doc in snap.docs) doc.id: doc.data()};
       for (final day in daysInMonth) {
@@ -118,7 +122,8 @@ class _FinalPageState extends State<FinalPage> {
     // Tambahkan kolom grup tanggal (Target dulu, lalu Output)
     for (final d in daysInMonth) {
       final date = DateTime(selectedYear, selectedMonth, d);
-      final isWeekend = date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+      final isWeekend =
+          date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
       final outField = 'day_${d}_out';
       final targetField = 'day_${d}_target';
       columns.addAll([
@@ -149,7 +154,10 @@ class _FinalPageState extends State<FinalPage> {
             ),
             child: Text(
               ctx.cell.value.toString(),
-              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14, color: Colors.black),
+              style: TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                  color: Colors.black),
             ),
           ),
         ),
@@ -195,7 +203,10 @@ class _FinalPageState extends State<FinalPage> {
               ),
               child: Text(
                 ctx.cell.value.toString(),
-                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14, color: fontColor),
+                style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                    color: fontColor),
               ),
             );
           },
@@ -238,7 +249,8 @@ class _FinalPageState extends State<FinalPage> {
           ),
           child: Text(
             ctx.cell.value.toString(),
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black),
+            style: TextStyle(
+                fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black),
           ),
         ),
       ),
@@ -269,7 +281,8 @@ class _FinalPageState extends State<FinalPage> {
           ),
           child: Text(
             ctx.cell.value.toString(),
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black),
+            style: TextStyle(
+                fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black),
           ),
         ),
       ),
@@ -300,13 +313,17 @@ class _FinalPageState extends State<FinalPage> {
           ),
           child: Text(
             ctx.cell.value.toString(),
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black),
+            style: TextStyle(
+                fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black),
           ),
         ),
       ),
     ]);
     columnGroups.add(
-      PlutoColumnGroup(title: 'Total', fields: ['total_target', 'total_output', 'total_selisih'], backgroundColor: Colors.yellow.shade300),
+      PlutoColumnGroup(
+          title: 'Total',
+          fields: ['total_target', 'total_output', 'total_selisih'],
+          backgroundColor: Colors.yellow.shade300),
     );
 
     rows = [];
@@ -334,7 +351,9 @@ class _FinalPageState extends State<FinalPage> {
           if (kumitateSnap.exists) {
             final data = kumitateSnap.data();
             if (data != null && data['Kontrak'] is List) {
-              contractCollections = List<dynamic>.from(data['Kontrak']).map((e) => e.toString()).toList();
+              contractCollections = List<dynamic>.from(data['Kontrak'])
+                  .map((e) => e.toString())
+                  .toList();
             }
           }
 
@@ -368,7 +387,8 @@ class _FinalPageState extends State<FinalPage> {
               });
             } catch (e) {
               // ignore per-contract errors but continue with others
-              print('Error reading latest for $line $dateStr contract $contractName: $e');
+              print(
+                  'Error reading latest for $line $dateStr contract $contractName: $e');
             }
           }
         } catch (e) {
@@ -394,16 +414,22 @@ class _FinalPageState extends State<FinalPage> {
         final targetField = 'day_${day}_target';
         // Target dulu, baru output
         final target = lineTargetPerDay[line]?[day] ?? 0;
-        cells[targetField] = PlutoCell(value: target > 0 ? target.toStringAsFixed(0) : ' ');
+        cells[targetField] =
+            PlutoCell(value: target > 0 ? target.toStringAsFixed(0) : ' ');
         final val = lineDataInt[day] ?? 0;
         cells[outField] = PlutoCell(value: lineData[day] ?? ' ');
         if (val > 0) totalOutput += val;
         if (target > 0) totalTarget += target;
       }
       final selisih = totalOutput - totalTarget;
-      cells['total_target'] = PlutoCell(value: totalTarget > 0 ? totalTarget.toStringAsFixed(0) : ' ');
-      cells['total_output'] = PlutoCell(value: totalOutput > 0 ? totalOutput.toString() : ' ');
-      cells['total_selisih'] = PlutoCell(value: (totalTarget > 0 || totalOutput > 0) ? selisih.toStringAsFixed(0) : ' ');
+      cells['total_target'] = PlutoCell(
+          value: totalTarget > 0 ? totalTarget.toStringAsFixed(0) : ' ');
+      cells['total_output'] =
+          PlutoCell(value: totalOutput > 0 ? totalOutput.toString() : ' ');
+      cells['total_selisih'] = PlutoCell(
+          value: (totalTarget > 0 || totalOutput > 0)
+              ? selisih.toStringAsFixed(0)
+              : ' ');
       rows.add(PlutoRow(cells: cells));
     }
     setState(() => isLoading = false);
@@ -411,40 +437,29 @@ class _FinalPageState extends State<FinalPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: Colors.blue.shade100,
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        title: Text(
-          "Final Bottan Data",
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            color: Colors.white,
+        title: const Text('Final Bottan Data'),
+        centerTitle: true,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF1565C0), Color(0xFF0D47A1)],
+            ),
           ),
         ),
-        centerTitle: true,
         actions: [
           Tooltip(
             message: 'Refresh',
             child: IconButton(
-              icon: Icon(Icons.refresh, color: Colors.white, size: 26),
+              icon: const Icon(Icons.refresh, size: 26),
               onPressed: isLoading ? null : _loadData,
-              splashRadius: 24,
-              tooltip: 'Refresh',
             ),
           ),
         ],
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Colors.blue.shade400, Colors.blueAccent.shade700],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-        elevation: 4,
         toolbarHeight: 60,
       ),
       body: SingleChildScrollView(
@@ -469,8 +484,12 @@ class _FinalPageState extends State<FinalPage> {
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int>(
                           value: selectedYear,
-                          style: TextStyle(fontWeight: FontWeight.normal, color: Colors.black, fontSize: 16),
-                          icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.blue.shade700, size: 28),
+                          style: TextStyle(
+                              fontWeight: FontWeight.normal,
+                              color: Colors.black,
+                              fontSize: 16),
+                          icon: Icon(Icons.keyboard_arrow_down_rounded,
+                              color: Colors.blue.shade700, size: 28),
                           dropdownColor: Colors.white,
                           alignment: Alignment.center,
                           items: List.generate(6, (i) {
@@ -478,11 +497,21 @@ class _FinalPageState extends State<FinalPage> {
                             return DropdownMenuItem(
                               value: year,
                               alignment: Alignment.center,
-                              child: Center(child: Text(year.toString(), style: TextStyle(fontWeight: FontWeight.normal, fontSize: 16, color: Colors.black), textAlign: TextAlign.center)),
+                              child: Center(
+                                  child: Text(year.toString(),
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.normal,
+                                          fontSize: 16,
+                                          color: Colors.black),
+                                      textAlign: TextAlign.center)),
                             );
                           }),
                           onChanged: (v) {
-                            if (v != null) setState(() { selectedYear = v; _loadData(); });
+                            if (v != null)
+                              setState(() {
+                                selectedYear = v;
+                                _loadData();
+                              });
                           },
                         ),
                       ),
@@ -495,15 +524,20 @@ class _FinalPageState extends State<FinalPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: Colors.blue.shade300, width: 1),
+                      boxShadow: [BoxShadow(color: Colors.blue.shade50, blurRadius: 4)],
                     ),
                     child: Center(
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int>(
                           value: selectedMonth,
-                          style: TextStyle(fontWeight: FontWeight.normal, color: Colors.black, fontSize: 16),
-                          icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.blue.shade700, size: 28),
+                          style: TextStyle(
+                              fontWeight: FontWeight.normal,
+                              color: Colors.black,
+                              fontSize: 16),
+                          icon: Icon(Icons.keyboard_arrow_down_rounded,
+                              color: Colors.blue.shade700, size: 28),
                           dropdownColor: Colors.white,
                           alignment: Alignment.center,
                           items: List.generate(12, (i) {
@@ -511,11 +545,23 @@ class _FinalPageState extends State<FinalPage> {
                             return DropdownMenuItem(
                               value: month,
                               alignment: Alignment.center,
-                              child: Center(child: Text(DateFormat('MMMM').format(DateTime(0, month)), style: TextStyle(fontWeight: FontWeight.normal, fontSize: 16, color: Colors.black), textAlign: TextAlign.center)),
+                              child: Center(
+                                  child: Text(
+                                      DateFormat('MMMM')
+                                          .format(DateTime(0, month)),
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.normal,
+                                          fontSize: 16,
+                                          color: Colors.black),
+                                      textAlign: TextAlign.center)),
                             );
                           }),
                           onChanged: (v) {
-                            if (v != null) setState(() { selectedMonth = v; _loadData(); });
+                            if (v != null)
+                              setState(() {
+                                selectedMonth = v;
+                                _loadData();
+                              });
                           },
                         ),
                       ),
@@ -540,11 +586,14 @@ class _FinalPageState extends State<FinalPage> {
                             columnHeight: 36,
                             rowHeight: 32,
                             gridBorderColor: Colors.blue, // blue border
-                            gridBackgroundColor: Colors.blue.shade50, // cell background
+                            gridBackgroundColor:
+                                Colors.blue.shade50, // cell background
                             activatedBorderColor: Colors.blue,
                             activatedColor: Colors.blue.shade50,
-                            cellTextStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                            columnTextStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                            cellTextStyle: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w500),
+                            columnTextStyle: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.bold),
                           ),
                         ),
                         mode: PlutoGridMode.readOnly,
@@ -554,7 +603,8 @@ class _FinalPageState extends State<FinalPage> {
             // Tambahkan grafik di bawah tabel
             if (!isLoading)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -563,10 +613,14 @@ class _FinalPageState extends State<FinalPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 10.0, left: 2.0),
+                            padding:
+                                const EdgeInsets.only(bottom: 10.0, left: 2.0),
                             child: Text(
                               'Line $line',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19, color: Colors.blue.shade900),
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 19,
+                                  color: Colors.blue.shade900),
                             ),
                           ),
                           Row(
@@ -577,7 +631,8 @@ class _FinalPageState extends State<FinalPage> {
                               ),
                               SizedBox(width: 16),
                               Expanded(
-                                child: _buildLineChart(line, true), // Akumulatif
+                                child:
+                                    _buildLineChart(line, true), // Akumulatif
                               ),
                             ],
                           ),
@@ -618,7 +673,7 @@ class _FinalPageState extends State<FinalPage> {
       return Container(
         constraints: BoxConstraints(minHeight: 180, maxHeight: 260),
         color: Colors.grey.shade100,
-        child: Center(child: Text('Tidak ada data')), 
+        child: Center(child: Text('Tidak ada data')),
       );
     }
     // Responsif: gunakan LayoutBuilder untuk menyesuaikan lebar
@@ -642,12 +697,15 @@ class _FinalPageState extends State<FinalPage> {
                         constraints: BoxConstraints(maxWidth: 800),
                         child: Card(
                           elevation: 4,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16)),
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(32, 24, 24, 24),
                             child: SizedBox(
                               height: 480,
-                              child: _buildChartContent(xDays, yData, line, isAkumulatif, isPopup: true),
+                              child: _buildChartContent(
+                                  xDays, yData, line, isAkumulatif,
+                                  isPopup: true),
                             ),
                           ),
                         ),
@@ -659,10 +717,12 @@ class _FinalPageState extends State<FinalPage> {
               child: Card(
                 elevation: 2,
                 margin: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-                  child: _buildChartContent(xDays, yData, line, isAkumulatif, isPopup: false),
+                  child: _buildChartContent(xDays, yData, line, isAkumulatif,
+                      isPopup: false),
                 ),
               ),
             ),
@@ -672,18 +732,24 @@ class _FinalPageState extends State<FinalPage> {
     );
   }
 
-  Widget _buildChartContent(List<int> xDays, List<double> yData, String line, bool isAkumulatif, {bool isPopup = false}) {
+  Widget _buildChartContent(
+      List<int> xDays, List<double> yData, String line, bool isAkumulatif,
+      {bool isPopup = false}) {
     return LineChart(
       LineChartData(
         gridData: FlGridData(show: true, drawVerticalLine: false),
         titlesData: FlTitlesData(
           leftTitles: AxisTitles(
-            sideTitles: SideTitles(showTitles: true, reservedSize: 44, getTitlesWidget: (value, meta) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: Text(value.toInt().toString(), style: TextStyle(fontSize: 12)),
-              );
-            }),
+            sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 44,
+                getTitlesWidget: (value, meta) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: Text(value.toInt().toString(),
+                        style: TextStyle(fontSize: 12)),
+                  );
+                }),
           ),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
@@ -692,14 +758,16 @@ class _FinalPageState extends State<FinalPage> {
               getTitlesWidget: (value, meta) {
                 final idx = value.toInt();
                 if (idx < 1 || idx > xDays.length) return SizedBox.shrink();
-                return Text('${xDays[idx - 1]}', style: TextStyle(fontSize: 10));
+                return Text('${xDays[idx - 1]}',
+                    style: TextStyle(fontSize: 10));
               },
             ),
           ),
           topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
           rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
-        borderData: FlBorderData(show: true, border: Border.all(color: Colors.blue.shade200)),
+        borderData: FlBorderData(
+            show: true, border: Border.all(color: Colors.blue.shade200)),
         minX: 1,
         maxX: xDays.length.toDouble(),
         minY: 0,
@@ -714,7 +782,10 @@ class _FinalPageState extends State<FinalPage> {
             color: isAkumulatif ? Colors.orange : Colors.blue,
             barWidth: isPopup ? 4 : 3,
             dotData: FlDotData(show: false),
-            belowBarData: BarAreaData(show: true, color: (isAkumulatif ? Colors.orange : Colors.blue).withOpacity(0.12)),
+            belowBarData: BarAreaData(
+                show: true,
+                color: (isAkumulatif ? Colors.orange : Colors.blue)
+                    .withOpacity(0.12)),
           ),
         ],
         lineTouchData: LineTouchData(
@@ -727,7 +798,10 @@ class _FinalPageState extends State<FinalPage> {
                 final value = spot.y.toInt();
                 return LineTooltipItem(
                   '$day: $value',
-                  TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: isPopup ? 18 : 14),
+                  TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: isPopup ? 18 : 14),
                 );
               }).toList();
             },

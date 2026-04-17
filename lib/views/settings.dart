@@ -10,6 +10,7 @@ class EditProcessesScreen extends StatefulWidget {
 
 class _EditProcessesScreenState extends State<EditProcessesScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  bool _mounted = true;
   Map<String, List<String>> _baseProcesses = {};
   // Simpan daftar proses khusus PART per line (diisi dari basic_data.data_process.process_part)
   Map<String, List<String>> _partProcesses = {};
@@ -17,24 +18,35 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   Map<String, ScrollController> _contractsScrollControllers = {};
   Map<String, List<String>> _contracts = {};
   Map<String, String> _selectedContracts = {};
-  Map<String, Map<String, List<Map<String, dynamic>>>> _contractProcessData = {};
+  Map<String, Map<String, List<Map<String, dynamic>>>> _contractProcessData =
+      {};
   bool _isLoading = true;
   DateTime selectedDate = DateTime.now();
   ScrollController _scrollController = ScrollController();
   List<String> _allContracts = [];
-  
+
   // State untuk mode (Kumitate/Part)
   String _currentMode = 'Kumitate'; // Default: Kumitate
 
   final List<String> lines = ["A", "B", "C", "D", "E", "Z"];
   final Map<String, String> lineTitles = {
-    "A": "Line A", "B": "Line B", "C": "Line C", 
-    "D": "Line D", "E": "Line E", "Z": "Line Z"
+    "A": "Line A",
+    "B": "Line B",
+    "C": "Line C",
+    "D": "Line D",
+    "E": "Line E",
+    "Z": "Line Z"
   };
 
   // Map untuk menyimpan controller dan focus node tiap input sequence
   Map<String, TextEditingController> _sequenceControllers = {};
   Map<String, FocusNode> _sequenceFocusNodes = {};
+
+  // Map untuk menyimpan controller tiap input target per process
+  Map<String, TextEditingController> _targetControllers = {};
+  Map<String, FocusNode> _targetFocusNodes = {};
+
+  // Target selalu ditampilkan (tidak perlu toggle)
 
   // Fungsi untuk mengubah underscore menjadi spasi
   String _formatProcessName(String processName) {
@@ -57,13 +69,14 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
   @override
   void dispose() {
+    _mounted = false;
     // Dispose semua contracts scroll controllers
     for (var c in _contractsScrollControllers.values) {
       try {
         c.dispose();
       } catch (_) {}
     }
-    
+
     // Dispose semua sequence controllers dan focus nodes
     for (var controller in _sequenceControllers.values) {
       controller.dispose();
@@ -71,7 +84,15 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
     for (var focusNode in _sequenceFocusNodes.values) {
       focusNode.dispose();
     }
-    
+
+    // Dispose semua target controllers dan focus nodes
+    for (var controller in _targetControllers.values) {
+      controller.dispose();
+    }
+    for (var focusNode in _targetFocusNodes.values) {
+      focusNode.dispose();
+    }
+
     try {
       _scrollController.dispose();
     } catch (_) {}
@@ -89,17 +110,20 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
   Future<void> fetchMasterContracts() async {
     try {
-      DocumentSnapshot contractsSnapshot = 
+      DocumentSnapshot contractsSnapshot =
           await _firestore.collection('basic_data').doc('contracts').get();
-      
+
       if (contractsSnapshot.exists) {
-        Map<String, dynamic> contractsData = _convertToStringDynamicMap(contractsSnapshot.data());
+        Map<String, dynamic> contractsData =
+            _convertToStringDynamicMap(contractsSnapshot.data());
+        if (!_mounted) return;
         setState(() {
-          _allContracts = contractsData.keys.where((key) => key.isNotEmpty).toList();
+          _allContracts =
+              contractsData.keys.where((key) => key.isNotEmpty).toList();
           _allContracts.sort();
         });
       }
-      
+
       await fetchProcessLines();
     } catch (e) {
       await fetchProcessLines();
@@ -117,20 +141,24 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
   Future<void> fetchProcessLines() async {
     try {
+      if (!_mounted) return;
       setState(() => _isLoading = true);
       // Ambil data proses umum dan khusus PART dari basic_data.data_process
-      DocumentSnapshot processSnapshot = 
+      DocumentSnapshot processSnapshot =
           await _firestore.collection('basic_data').doc('data_process').get();
 
       if (!processSnapshot.exists) {
+        if (!_mounted) return;
         setState(() => _isLoading = false);
         return;
       }
 
-      Map<String, dynamic> processData = _convertToStringDynamicMap(processSnapshot.data());
+      Map<String, dynamic> processData =
+          _convertToStringDynamicMap(processSnapshot.data());
 
       // Isi _partProcesses jika ada field process_part
-      if (processData.containsKey('process_part') && processData['process_part'] is List) {
+      if (processData.containsKey('process_part') &&
+          processData['process_part'] is List) {
         List<dynamic> partDyn = processData['process_part'];
         List<String> partList = partDyn.map((e) => e.toString()).toList();
         for (String line in lines) {
@@ -141,9 +169,11 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
       // Ambil process_kumitate untuk semua line
       List<String> kumitateProcesses = [];
-      if (processData.containsKey('process_kumitate') && processData['process_kumitate'] is List) {
+      if (processData.containsKey('process_kumitate') &&
+          processData['process_kumitate'] is List) {
         List<dynamic> processesDynamic = processData['process_kumitate'];
-        kumitateProcesses = processesDynamic.map((item) => item.toString()).toList();
+        kumitateProcesses =
+            processesDynamic.map((item) => item.toString()).toList();
       }
 
       for (String line in lines) {
@@ -152,8 +182,10 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
         await _fetchContractProcesses(line, formattedDate);
       }
 
+      if (!_mounted) return;
       setState(() => _isLoading = false);
     } catch (e) {
+      if (!_mounted) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Gagal memuat data: ${e.toString()}')),
@@ -161,30 +193,36 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
     }
   }
 
-  Future<void> _fetchContractsFromCounterSistem(String line, String formattedDate) async {
+  Future<void> _fetchContractsFromCounterSistem(
+      String line, String formattedDate) async {
     try {
       DocumentReference docRef = _getDocRef(line, formattedDate);
 
       DocumentSnapshot snapshot = await docRef.get();
-      
+
       List<String> existingContracts = [];
-      
+
       if (snapshot.exists) {
         Map<String, dynamic> data = _convertToStringDynamicMap(snapshot.data());
-        
+
         // STRUKTUR BARU: Cek field 'Kontrak' yang berisi array of contracts
         if (data.containsKey('Kontrak') && data['Kontrak'] is List) {
           List<dynamic> contractsArray = data['Kontrak'];
           for (var contract in contractsArray) {
-            if (contract is String && contract.isNotEmpty && !existingContracts.contains(contract)) {
+            if (contract is String &&
+                contract.isNotEmpty &&
+                !existingContracts.contains(contract)) {
               existingContracts.add(contract);
             }
           }
         } else {
           // Struktur lama: ambil dari keys
           data.forEach((key, value) {
-            if (key != 'created' && key != 'updated' && key != 'contract_name' && 
-                key.isNotEmpty && !existingContracts.contains(key)) {
+            if (key != 'created' &&
+                key != 'updated' &&
+                key != 'contract_name' &&
+                key.isNotEmpty &&
+                !existingContracts.contains(key)) {
               existingContracts.add(key);
             }
           });
@@ -203,10 +241,13 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
           QuerySnapshot subcollections = await lineCollectionRef.get();
           for (DocumentSnapshot doc in subcollections.docs) {
             if (doc.id == _currentMode) continue;
-            
-            CollectionReference contractSubcollections = doc.reference.collection(doc.id);
-            QuerySnapshot contractProcesses = await contractSubcollections.get();
-            if (contractProcesses.docs.isNotEmpty && !existingContracts.contains(doc.id)) {
+
+            CollectionReference contractSubcollections =
+                doc.reference.collection(doc.id);
+            QuerySnapshot contractProcesses =
+                await contractSubcollections.get();
+            if (contractProcesses.docs.isNotEmpty &&
+                !existingContracts.contains(doc.id)) {
               existingContracts.add(doc.id);
             }
           }
@@ -215,15 +256,17 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
         }
       }
 
+      if (!_mounted) return;
       setState(() {
         List<String> previousContracts = _contracts[line] ?? [];
         Set<String> allContracts = Set<String>.from(previousContracts);
         allContracts.addAll(existingContracts);
-        
+
         _contracts[line] = allContracts.toList();
-        
-        if (_contracts[line]!.isNotEmpty && 
-            (_selectedContracts[line]!.isEmpty || !_contracts[line]!.contains(_selectedContracts[line]))) {
+
+        if (_contracts[line]!.isNotEmpty &&
+            (_selectedContracts[line]!.isEmpty ||
+                !_contracts[line]!.contains(_selectedContracts[line]))) {
           _selectedContracts[line] = _contracts[line]!.first;
         } else if (_contracts[line]!.isEmpty) {
           _selectedContracts[line] = "";
@@ -234,75 +277,102 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
     }
   }
 
-  Future<void> _fetchContractProcesses(String line, String formattedDate) async {
+  Future<void> _fetchContractProcesses(
+      String line, String formattedDate) async {
     try {
       Map<String, List<Map<String, dynamic>>> contractData = {};
-      
+
       DocumentReference docRef = _getDocRef(line, formattedDate);
 
       DocumentSnapshot snapshot = await docRef.get();
       List<String> contractOrder = [];
-      
+
       if (snapshot.exists) {
         Map<String, dynamic> data = _convertToStringDynamicMap(snapshot.data());
-        
+
         // Baca urutan kontrak dari field 'Kontrak'
         if (data.containsKey('Kontrak') && data['Kontrak'] is List) {
           List<dynamic> contractsArray = data['Kontrak'];
-          contractOrder = contractsArray.map((item) => item.toString()).toList();
+          contractOrder =
+              contractsArray.map((item) => item.toString()).toList();
         }
       }
-      
+
       // Jika tidak ada urutan, gunakan urutan dari _contracts[line]
       if (contractOrder.isEmpty) {
         contractOrder = List<String>.from(_contracts[line]!);
       }
-      
+
       for (String contract in _contracts[line]!) {
         List<Map<String, dynamic>> processes = [];
         bool foundInNewStructure = false;
-        
+
         if (snapshot.exists) {
-          Map<String, dynamic> data = _convertToStringDynamicMap(snapshot.data());
-          
+          Map<String, dynamic> data =
+              _convertToStringDynamicMap(snapshot.data());
+
           // Cek struktur array of strings untuk proses
           if (data.containsKey(contract) && data[contract] is List) {
             List<dynamic> contractArray = data[contract];
-            
+
             for (int i = 0; i < contractArray.length; i++) {
               String processName = contractArray[i].toString();
               int sequence = i + 1;
-              
+
               processes.add({
                 'name': processName,
                 'sequence': sequence,
+                'target': 0, // akan diisi dari subcollection di bawah
               });
             }
-            
+
             foundInNewStructure = true;
+
+            // Baca target dari subcollection counter_sistem/.../Kumitate/{contract}/{process}
+            try {
+              CollectionReference subColRef = docRef.collection(contract);
+              QuerySnapshot subSnap = await subColRef.get();
+              for (DocumentSnapshot subDoc in subSnap.docs) {
+                Map<String, dynamic> subData =
+                    _convertToStringDynamicMap(subDoc.data());
+                int tgt = (subData['target'] ?? 0) as int;
+                if (tgt > 0) {
+                  int idx = processes.indexWhere((p) => p['name'] == subDoc.id);
+                  if (idx >= 0) {
+                    processes[idx]['target'] = tgt;
+                    // Simpan existing_data agar field lain (counter, dll) tidak hilang saat save
+                    processes[idx]['existing_data'] = subData;
+                  }
+                }
+              }
+            } catch (_) {}
           }
         }
-        
+
         // Jika tidak ditemukan di struktur baru, cek struktur lama (hanya untuk Kumitate)
         if (!foundInNewStructure && _currentMode == 'Kumitate') {
           try {
-            CollectionReference contractCollectionRef = docRef.collection(contract);
+            CollectionReference contractCollectionRef =
+                docRef.collection(contract);
             QuerySnapshot processSnapshot = await contractCollectionRef.get();
-            
+
             if (processSnapshot.docs.isNotEmpty) {
               // Ambil data proses yang sudah ada termasuk data counter dari Arduino
               for (DocumentSnapshot doc in processSnapshot.docs) {
-                Map<String, dynamic> processData = _convertToStringDynamicMap(doc.data());
-                
+                Map<String, dynamic> processData =
+                    _convertToStringDynamicMap(doc.data());
+
                 processes.add({
                   'name': doc.id,
                   'sequence': processData['sequence'] ?? 0,
+                  'target': processData['target'] ?? 0,
                   'existing_data': processData,
                 });
               }
-              
+
               // Urutkan berdasarkan sequence
-              processes.sort((a, b) => (a['sequence'] ?? 0).compareTo(b['sequence'] ?? 0));
+              processes.sort(
+                  (a, b) => (a['sequence'] ?? 0).compareTo(b['sequence'] ?? 0));
             } else {
               // Default: semua sequence 0
               for (String processName in _baseProcesses[line]!) {
@@ -328,6 +398,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
             processes.add({
               'name': processName,
               'sequence': 0,
+              'target': 0,
             });
           }
         }
@@ -335,19 +406,20 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
         contractData[contract] = processes;
       }
 
+      if (!_mounted) return;
       setState(() {
         _contractProcessData[line] = contractData;
-        
+
         // Urutkan kontrak berdasarkan urutan di field 'Kontrak'
         if (contractOrder.isNotEmpty) {
           _contracts[line]!.sort((a, b) {
             int indexA = contractOrder.indexOf(a);
             int indexB = contractOrder.indexOf(b);
-            
+
             if (indexA == -1 && indexB == -1) return a.compareTo(b);
             if (indexA == -1) return 1;
             if (indexB == -1) return -1;
-            
+
             return indexA.compareTo(indexB);
           });
         }
@@ -358,15 +430,14 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   }
 
   List<Map<String, dynamic>> _getSortedProcesses(String line, String contract) {
-    if (_contractProcessData[line] == null || 
+    if (_contractProcessData[line] == null ||
         _contractProcessData[line]![contract] == null) {
       return [];
     }
-    
-    List<Map<String, dynamic>> processes = List<Map<String, dynamic>>.from(
-      _contractProcessData[line]![contract]!
-    );
-    
+
+    List<Map<String, dynamic>> processes =
+        List<Map<String, dynamic>>.from(_contractProcessData[line]![contract]!);
+
     // Jika semua sequence = 0 (belum diatur), pertahankan urutan index array asli
     bool allZero = processes.every((p) => (p['sequence'] ?? 0) == 0);
     if (allZero) return processes;
@@ -381,7 +452,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
     indexed.sort((a, b) {
       int aSeq = a['sequence'] ?? 0;
       int bSeq = b['sequence'] ?? 0;
-      
+
       // Keduanya sequence > 0: urutkan berdasarkan sequence
       if (aSeq > 0 && bSeq > 0) return aSeq.compareTo(bSeq);
       // a sudah diisi, b belum → a naik ke atas
@@ -410,7 +481,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
       }
 
       String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-      
+
       DocumentReference docRef = _getDocRef(line, formattedDate);
 
       // STRUKTUR BARU: Simpan array kontrak untuk menjaga urutan dengan field 'Kontrak'
@@ -422,15 +493,16 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
       if (_currentMode == 'Kumitate') {
         // Simpan proses untuk setiap kontrak
         for (String contract in _contracts[line]!) {
-          List<Map<String, dynamic>> currentProcesses = _contractProcessData[line]![contract] ?? [];
-          
+          List<Map<String, dynamic>> currentProcesses =
+              _contractProcessData[line]![contract] ?? [];
+
           // Urutkan processes berdasarkan sequence
           currentProcesses.sort((a, b) {
             int aSeq = a['sequence'] ?? 0;
             int bSeq = b['sequence'] ?? 0;
             return aSeq.compareTo(bSeq);
           });
-          
+
           // Hanya simpan nama proses yang memiliki sequence > 0
           List<String> processNamesWithSequence = [];
           for (var process in currentProcesses) {
@@ -440,7 +512,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
               processNamesWithSequence.add(processName);
             }
           }
-          
+
           if (processNamesWithSequence.isNotEmpty) {
             updateData[contract] = processNamesWithSequence;
           } else {
@@ -451,39 +523,63 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
         await docRef.set(updateData, SetOptions(merge: true));
 
-        // Simpan processes dengan mempertahankan data counter yang sudah ada
+        // Simpan sequence + target ke subcollection
+        // counter_sistem/{date}/{line}/Kumitate/{contract}/{process}
         for (String contract in _contracts[line]!) {
-          CollectionReference contractCollectionRef = docRef.collection(contract);
-          
-          List<Map<String, dynamic>> currentProcesses = _contractProcessData[line]![contract] ?? [];
+          CollectionReference contractCollectionRef =
+              docRef.collection(contract);
+
+          List<Map<String, dynamic>> currentProcesses =
+              _contractProcessData[line]![contract] ?? [];
           for (var process in currentProcesses) {
             String processName = process['name'];
             int sequence = process['sequence'] ?? 0;
-            
+            int target = process['target'] ?? 0;
+
+            DocumentReference processDocRef =
+                contractCollectionRef.doc(processName);
+
             if (sequence > 0) {
-              DocumentReference processDocRef = contractCollectionRef.doc(processName);
-              
               Map<String, dynamic> updateProcessData = {
                 'sequence': sequence,
               };
-              
+
+              // Simpan target jika ada nilai
+              if (target > 0) {
+                updateProcessData['target'] = target;
+              } else {
+                updateProcessData['target'] = FieldValue.delete();
+              }
+
               // Jika ada data existing, pertahankan field-field lainnya
-              if (process.containsKey('existing_data') && process['existing_data'] is Map) {
-                Map<String, dynamic> existingData = Map<String, dynamic>.from(process['existing_data']);
+              if (process.containsKey('existing_data') &&
+                  process['existing_data'] is Map) {
+                Map<String, dynamic> existingData =
+                    Map<String, dynamic>.from(process['existing_data']);
                 existingData.remove('sequence');
+                existingData.remove('target');
                 existingData.remove('updated');
                 updateProcessData.addAll(existingData);
               }
-              
-              await processDocRef.set(updateProcessData, SetOptions(merge: true));
+
+              await processDocRef.set(
+                  updateProcessData, SetOptions(merge: true));
             } else {
-              DocumentReference processDocRef = contractCollectionRef.doc(processName);
               DocumentSnapshot processSnapshot = await processDocRef.get();
-              
               if (processSnapshot.exists) {
-                await processDocRef.update({
+                Map<String, dynamic> deleteFields = {
                   'sequence': FieldValue.delete(),
-                });
+                };
+                if (target == 0) {
+                  deleteFields['target'] = FieldValue.delete();
+                } else {
+                  deleteFields['target'] = target;
+                }
+                await processDocRef.update(deleteFields);
+              } else if (target > 0) {
+                // Tidak ada sequence tapi ada target — tetap simpan target
+                await processDocRef
+                    .set({'target': target}, SetOptions(merge: true));
               }
             }
           }
@@ -492,9 +588,10 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
         // Untuk mode Part, simpan semua proses (tanpa sequence)
         for (String contract in _contracts[line]!) {
           List<String> processNames = [];
-          List<String> src = (_partProcesses[line] != null && _partProcesses[line]!.isNotEmpty)
-              ? _partProcesses[line]!
-              : _baseProcesses[line]!;
+          List<String> src =
+              (_partProcesses[line] != null && _partProcesses[line]!.isNotEmpty)
+                  ? _partProcesses[line]!
+                  : _baseProcesses[line]!;
           for (String processName in src) {
             processNames.add(processName);
           }
@@ -503,26 +600,39 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
         await docRef.set(updateData, SetOptions(merge: true));
 
-        // Buat/Perbarui subcollections kontrak di dokumen Part
+        // Buat/Perbarui subcollections kontrak di dokumen Part (gunakan batch)
         try {
+          if (!_mounted) return;
+          WriteBatch batch = _firestore.batch();
           for (String contract in _contracts[line]!) {
-            List<String> processNames = updateData[contract] is List ? List<String>.from(updateData[contract]) : [];
+            List<String> processNames = updateData[contract] is List
+                ? List<String>.from(updateData[contract])
+                : [];
             if (processNames.isEmpty) continue;
 
             CollectionReference contractCol = docRef.collection(contract);
             for (String pname in processNames) {
-              await contractCol.doc(pname).set({'part': ''}, SetOptions(merge: true));
+              batch.set(
+                contractCol.doc(pname),
+                {'part': ''},
+                SetOptions(merge: true),
+              );
             }
           }
+          await batch.commit();
         } catch (e) {
           print('Gagal membuat subcollections untuk Part saat menyimpan: $e');
         }
       }
 
+      if (!_mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("${lineTitles[line]} berhasil disimpan! Urutan kontrak: ${_contracts[line]!.join(', ')}")),
+        SnackBar(
+            content: Text(
+                "${lineTitles[line]} berhasil disimpan! Urutan kontrak: ${_contracts[line]!.join(', ')}")),
       );
     } catch (e) {
+      if (!_mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Gagal menyimpan ${lineTitles[line]}: $e")),
       );
@@ -574,18 +684,23 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
               onPressed: () async {
                 if (controller.text.trim().isNotEmpty) {
                   String contractName = controller.text.trim();
-                  
+
                   if (_allContracts.contains(contractName)) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Kontrak '$contractName' sudah ada!")),
+                      SnackBar(
+                          content: Text("Kontrak '$contractName' sudah ada!")),
                     );
                     return;
                   }
 
                   try {
-                    await _firestore.collection('basic_data').doc('contracts')
-                        .set({contractName: contractName}, SetOptions(merge: true));
+                    await _firestore
+                        .collection('basic_data')
+                        .doc('contracts')
+                        .set({contractName: contractName},
+                            SetOptions(merge: true));
 
+                    if (!_mounted) return;
                     setState(() {
                       _allContracts.add(contractName);
                       _allContracts.sort();
@@ -593,9 +708,12 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Kontrak '$contractName' berhasil ditambahkan ke master list!")),
+                      SnackBar(
+                          content: Text(
+                              "Kontrak '$contractName' berhasil ditambahkan ke master list!")),
                     );
                   } catch (e) {
+                    if (!_mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text("Gagal menambah kontrak: $e")),
                     );
@@ -619,7 +737,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
   Future<void> addContractToLine(String line) async {
     String? selectedContract;
-    
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -650,7 +768,8 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                         hintText: "Cari kontrak...",
                         hintStyle: TextStyle(fontSize: 16),
                         border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.search, color: Colors.blue.shade600),
+                        prefixIcon:
+                            Icon(Icons.search, color: Colors.blue.shade600),
                         filled: true,
                         fillColor: Colors.blue.shade50,
                       ),
@@ -665,7 +784,9 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                       return Container(
                         margin: EdgeInsets.symmetric(vertical: 2),
                         decoration: BoxDecoration(
-                          color: isSelected ? Colors.blue.shade100 : Colors.transparent,
+                          color: isSelected
+                              ? Colors.blue.shade100
+                              : Colors.transparent,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: ListTile(
@@ -683,7 +804,8 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                   items: _allContracts,
                   dropdownBuilder: (context, selectedItem) {
                     return Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(6),
@@ -725,22 +847,27 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                 ),
                 TextButton(
                   onPressed: () async {
-                    if (selectedContract != null && selectedContract!.isNotEmpty) {
+                    if (selectedContract != null &&
+                        selectedContract!.isNotEmpty) {
                       try {
+                        if (!_mounted) return;
                         setState(() {
                           if (!_contracts[line]!.contains(selectedContract!)) {
                             _contracts[line]!.add(selectedContract!);
                           }
-                          
-                          List<Map<String, dynamic>> newProcesses = _baseProcesses[line]!
-                              .map((processName) => {'name': processName, 'sequence': 0})
-                              .toList();
-                          
+
+                          List<Map<String, dynamic>> newProcesses =
+                              _baseProcesses[line]!
+                                  .map((processName) =>
+                                      {'name': processName, 'sequence': 0})
+                                  .toList();
+
                           if (_contractProcessData[line] == null) {
                             _contractProcessData[line] = {};
                           }
-                          
-                          _contractProcessData[line]![selectedContract!] = newProcesses;
+
+                          _contractProcessData[line]![selectedContract!] =
+                              newProcesses;
                           _selectedContracts[line] = selectedContract!;
                         });
 
@@ -748,45 +875,64 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                         // sehingga kontrak yang ditambahkan ke Kumitate otomatis tersedia di Part
                         if (_currentMode == 'Kumitate') {
                           try {
-                            String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
+                            String formattedDate =
+                                DateFormat("yyyy-MM-dd").format(selectedDate);
                             DocumentReference partDocRef = _firestore
                                 .collection('counter_sistem')
                                 .doc(formattedDate)
                                 .collection(line)
                                 .doc('Part');
 
-              // Untuk Part, gunakan daftar proses khusus PART jika ada,
-              // jika tidak ada gunakan baseProcesses sebagai fallback
-              List<String> processNames = (_partProcesses[line] != null && _partProcesses[line]!.isNotEmpty)
-                ? List<String>.from(_partProcesses[line]!)
-                : List<String>.from(_baseProcesses[line]!);
+                            // Untuk Part, gunakan daftar proses khusus PART jika ada,
+                            // jika tidak ada gunakan baseProcesses sebagai fallback
+                            List<String> processNames =
+                                (_partProcesses[line] != null &&
+                                        _partProcesses[line]!.isNotEmpty)
+                                    ? List<String>.from(_partProcesses[line]!)
+                                    : List<String>.from(_baseProcesses[line]!);
 
                             await partDocRef.set({
-                              'Kontrak': FieldValue.arrayUnion([selectedContract]),
+                              'Kontrak':
+                                  FieldValue.arrayUnion([selectedContract]),
                               selectedContract!: processNames,
                             }, SetOptions(merge: true));
                             // Buat subcollection kontrak di bawah dokumen Part dan tambahkan dokumen proses
                             try {
-                              CollectionReference contractCol = partDocRef.collection(selectedContract!);
+                              if (!_mounted) return;
+                              CollectionReference contractCol =
+                                  partDocRef.collection(selectedContract!);
+                              WriteBatch batch = _firestore.batch();
                               for (String p in processNames) {
-                                await contractCol.doc(p).set({'part': ''}, SetOptions(merge: true));
+                                batch.set(
+                                  contractCol.doc(p),
+                                  {'part': ''},
+                                  SetOptions(merge: true),
+                                );
                               }
+                              await batch.commit();
                             } catch (e) {
-                              print('Gagal membuat subcollection kontrak di Part: $e');
+                              print(
+                                  'Gagal membuat subcollection kontrak di Part: $e');
                             }
                           } catch (e) {
                             print('Gagal menyimpan kontrak ke Part: $e');
                           }
                         }
 
+                        if (!_mounted) return;
                         Navigator.pop(context);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("Kontrak '$selectedContract' berhasil ditambahkan ke ${lineTitles[line]} pada urutan ke-${_contracts[line]!.length}")),
+                          SnackBar(
+                              content: Text(
+                                  "Kontrak '$selectedContract' berhasil ditambahkan ke ${lineTitles[line]} pada urutan ke-${_contracts[line]!.length}")),
                         );
                       } catch (e) {
+                        if (!_mounted) return;
                         Navigator.pop(context);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("Gagal menambah kontrak: ${e.toString()}")),
+                          SnackBar(
+                              content: Text(
+                                  "Gagal menambah kontrak: ${e.toString()}")),
                         );
                       }
                     }
@@ -848,12 +994,14 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
               onPressed: () async {
                 Navigator.pop(context);
                 try {
-                  String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
+                  String formattedDate =
+                      DateFormat("yyyy-MM-dd").format(selectedDate);
 
                   // Hapus dari dokumen sesuai mode saat ini (mis. Kumitate)
                   DocumentReference docRef = _getDocRef(line, formattedDate);
 
-                  List<String> updatedContracts = List<String>.from(_contracts[line]!);
+                  List<String> updatedContracts =
+                      List<String>.from(_contracts[line]!);
                   updatedContracts.remove(contractName);
 
                   Map<String, dynamic> updateData = {
@@ -882,20 +1030,28 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                     print('Gagal menghapus kontrak di Part: $e');
                   }
 
+                  if (!_mounted) return;
                   setState(() {
                     _contracts[line]!.remove(contractName);
                     _contractProcessData[line]!.remove(contractName);
                     if (_selectedContracts[line] == contractName) {
-                      _selectedContracts[line] = _contracts[line]!.isNotEmpty ? _contracts[line]!.first : "";
+                      _selectedContracts[line] = _contracts[line]!.isNotEmpty
+                          ? _contracts[line]!.first
+                          : "";
                     }
                   });
 
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Kontrak $contractName berhasil dihapus dari Line dan Part")),
+                    SnackBar(
+                        content: Text(
+                            "Kontrak $contractName berhasil dihapus dari Line dan Part")),
                   );
                 } catch (e) {
+                  if (!_mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Gagal menghapus kontrak: ${e.toString()}")),
+                    SnackBar(
+                        content:
+                            Text("Gagal menghapus kontrak: ${e.toString()}")),
                   );
                 }
               },
@@ -920,16 +1076,18 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   }
 
   // Fungsi untuk inisialisasi controller dan focus node jika belum ada
-  void _initializeSequenceController(String line, String contractName, String processName, int sequence) {
+  void _initializeSequenceController(
+      String line, String contractName, String processName, int sequence) {
     String key = _getSequenceKey(line, contractName, processName);
-    
+
     if (!_sequenceControllers.containsKey(key)) {
-      _sequenceControllers[key] = TextEditingController(text: sequence > 0 ? sequence.toString() : '');
+      _sequenceControllers[key] =
+          TextEditingController(text: sequence > 0 ? sequence.toString() : '');
     }
-    
+
     if (!_sequenceFocusNodes.containsKey(key)) {
       _sequenceFocusNodes[key] = FocusNode();
-      
+
       // Tambahkan listener untuk focus node
       _sequenceFocusNodes[key]!.addListener(() {
         if (!_sequenceFocusNodes[key]!.hasFocus) {
@@ -941,47 +1099,55 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   }
 
   // Fungsi untuk update sequence dari controller ketika kehilangan fokus
-  void _updateProcessSequenceFromController(String line, String contractName, String processName) {
+  void _updateProcessSequenceFromController(
+      String line, String contractName, String processName) {
     String key = _getSequenceKey(line, contractName, processName);
     String sequenceText = _sequenceControllers[key]?.text ?? '';
     int sequence = int.tryParse(sequenceText) ?? 0;
-    
+
     _updateProcessSequence(line, contractName, processName, sequence);
   }
 
   // Fungsi untuk update sequence (versi baru dengan processName)
-  void _updateProcessSequence(String line, String contractName, String processName, int sequence) {
+  void _updateProcessSequence(
+      String line, String contractName, String processName, int sequence) {
     // Hanya untuk Kumitate, Part tidak bisa edit sequence
     if (_currentMode == 'Part') return;
-    
+
     setState(() {
-      if (_contractProcessData[line] != null && 
+      if (_contractProcessData[line] != null &&
           _contractProcessData[line]![contractName] != null) {
-        
         int originalIndex = _contractProcessData[line]![contractName]!
             .indexWhere((process) => process['name'] == processName);
-        
+
         if (originalIndex >= 0) {
-          _contractProcessData[line]![contractName]![originalIndex]['sequence'] = sequence;
+          _contractProcessData[line]![contractName]![originalIndex]
+              ['sequence'] = sequence;
         }
       }
     });
   }
 
   // Fungsi untuk handle onEditingComplete (ketika menekan Enter/Submit)
-  void _onSequenceEditingComplete(String line, String contractName, String processName, int currentIndex, List<Map<String, dynamic>> sortedProcesses) {
+  void _onSequenceEditingComplete(
+      String line,
+      String contractName,
+      String processName,
+      int currentIndex,
+      List<Map<String, dynamic>> sortedProcesses) {
     // Update sequence dari controller
     _updateProcessSequenceFromController(line, contractName, processName);
-    
+
     // Pindah fokus ke proses berikutnya jika ada
     if (currentIndex + 1 < sortedProcesses.length) {
       String nextProcessName = sortedProcesses[currentIndex + 1]['name'];
       String nextKey = _getSequenceKey(line, contractName, nextProcessName);
-      
+
       // Pastikan controller dan focus node untuk proses berikutnya sudah diinisialisasi
       int nextSequence = sortedProcesses[currentIndex + 1]['sequence'] ?? 0;
-      _initializeSequenceController(line, contractName, nextProcessName, nextSequence);
-      
+      _initializeSequenceController(
+          line, contractName, nextProcessName, nextSequence);
+
       FocusNode? nextFocus = _sequenceFocusNodes[nextKey];
       if (nextFocus != null) {
         FocusScope.of(context).requestFocus(nextFocus);
@@ -993,8 +1159,110 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   }
 
   // Fungsi untuk handle onFieldSubmitted (ketika menekan Enter)
-  void _onSequenceFieldSubmitted(String line, String contractName, String processName, int currentIndex, List<Map<String, dynamic>> sortedProcesses) {
-    _onSequenceEditingComplete(line, contractName, processName, currentIndex, sortedProcesses);
+  void _onSequenceFieldSubmitted(
+      String line,
+      String contractName,
+      String processName,
+      int currentIndex,
+      List<Map<String, dynamic>> sortedProcesses) {
+    _onSequenceEditingComplete(
+        line, contractName, processName, currentIndex, sortedProcesses);
+  }
+
+  // === TARGET HELPERS ===
+
+  String _getTargetKey(String line, String contractName, String processName) {
+    return 'target_${line}_${contractName}_${processName}';
+  }
+
+  void _initializeTargetController(
+      String line, String contractName, String processName, int target) {
+    String key = _getTargetKey(line, contractName, processName);
+
+    if (!_targetControllers.containsKey(key)) {
+      _targetControllers[key] =
+          TextEditingController(text: target > 0 ? target.toString() : '');
+    }
+
+    if (!_targetFocusNodes.containsKey(key)) {
+      _targetFocusNodes[key] = FocusNode();
+      _targetFocusNodes[key]!.addListener(() {
+        if (!_targetFocusNodes[key]!.hasFocus) {
+          _updateProcessTargetFromController(line, contractName, processName);
+        }
+      });
+    }
+  }
+
+  void _updateProcessTargetFromController(
+      String line, String contractName, String processName) {
+    String key = _getTargetKey(line, contractName, processName);
+    String targetText = _targetControllers[key]?.text ?? '';
+    int target = int.tryParse(targetText) ?? 0;
+    _updateProcessTarget(line, contractName, processName, target);
+  }
+
+  void _updateProcessTarget(
+      String line, String contractName, String processName, int target) {
+    // Ambil sequence proses ini untuk menentukan apakah stock_20min perlu dihitung
+    int sequence = 0;
+    if (_contractProcessData[line] != null &&
+        _contractProcessData[line]![contractName] != null) {
+      final proc = _contractProcessData[line]![contractName]!
+          .firstWhere((p) => p['name'] == processName, orElse: () => {});
+      sequence = proc['sequence'] ?? 0;
+    }
+
+    // Proses sequence 1 → stock_20min selalu 0
+    // Proses lain → target / 8 / 3 (dibulatkan ke bawah)
+    final int stock20min =
+        (sequence == 1 || target == 0) ? 0 : (target / 8 / 3).floor();
+
+    setState(() {
+      if (_contractProcessData[line] != null &&
+          _contractProcessData[line]![contractName] != null) {
+        int idx = _contractProcessData[line]![contractName]!
+            .indexWhere((p) => p['name'] == processName);
+        if (idx >= 0) {
+          _contractProcessData[line]![contractName]![idx]['target'] = target;
+          _contractProcessData[line]![contractName]![idx]['stock_20min'] =
+              stock20min;
+        }
+      }
+    });
+
+    // Simpan target + stock_20min langsung ke Firestore secara realtime
+    _saveTargetAndStock20minToFirestore(
+        line, contractName, processName, target, stock20min);
+  }
+
+  /// Menyimpan field 'target' dan 'stock_20min' ke Firestore secara langsung,
+  /// tanpa menunggu tombol Simpan ditekan.
+  Future<void> _saveTargetAndStock20minToFirestore(
+      String line,
+      String contractName,
+      String processName,
+      int target,
+      int stock20min) async {
+    try {
+      String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
+      DocumentReference processDocRef = _firestore
+          .collection('counter_sistem')
+          .doc(formattedDate)
+          .collection(line)
+          .doc(_currentMode)
+          .collection(contractName)
+          .doc(processName);
+
+      final Map<String, dynamic> saveData = {
+        'target': target > 0 ? target : FieldValue.delete(),
+        'stock_20min': stock20min > 0 ? stock20min : FieldValue.delete(),
+      };
+
+      await processDocRef.set(saveData, SetOptions(merge: true));
+    } catch (e) {
+      print('Gagal menyimpan target/stock_20min ke Firestore: $e');
+    }
   }
 
   Future<void> selectDate(BuildContext context) async {
@@ -1005,6 +1273,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
       lastDate: DateTime.now().add(Duration(days: 365)),
     );
     if (picked != null && picked != selectedDate) {
+      if (!_mounted) return;
       setState(() {
         selectedDate = picked;
         for (var line in lines) {
@@ -1012,7 +1281,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
           _selectedContracts[line] = "";
           _contractProcessData[line] = {};
         }
-        
+
         // Clear semua controllers dan focus nodes ketika tanggal berubah
         for (var controller in _sequenceControllers.values) {
           controller.dispose();
@@ -1022,6 +1291,15 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
         }
         _sequenceControllers.clear();
         _sequenceFocusNodes.clear();
+
+        for (var controller in _targetControllers.values) {
+          controller.dispose();
+        }
+        for (var focusNode in _targetFocusNodes.values) {
+          focusNode.dispose();
+        }
+        _targetControllers.clear();
+        _targetFocusNodes.clear();
       });
       await fetchProcessLines();
     }
@@ -1033,7 +1311,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
       if (oldIndex < newIndex) {
         newIndex -= 1;
       }
-      
+
       String contract = _contracts[line]!.removeAt(oldIndex);
       _contracts[line]!.insert(newIndex, contract);
     });
@@ -1041,36 +1319,27 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: Colors.blue.shade100,
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        title: Text(
-          'Edit Processes',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            color: Colors.white,
-          ),
-        ),
+        title: const Text('Edit Processes'),
         centerTitle: true,
+        elevation: 0,
         flexibleSpace: Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.blue.shade400, Colors.blueAccent.shade700],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              colors: [Color(0xFF1565C0), Color(0xFF0D47A1)],
             ),
           ),
         ),
-        elevation: 4,
         actions: [
           IconButton(
-            icon: Icon(Icons.add, color: Colors.white, size: 26),
+            icon: const Icon(Icons.add, size: 26),
             onPressed: addContractToMaster,
             tooltip: 'Tambah Kontrak ke Master List',
-            padding: EdgeInsets.all(10),
-            constraints: BoxConstraints(minWidth: 44, minHeight: 44),
+            padding: const EdgeInsets.all(10),
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           ),
           Container(
             constraints: BoxConstraints(maxWidth: 130),
@@ -1111,7 +1380,8 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
           ? Center(child: CircularProgressIndicator())
           : GestureDetector(
               onHorizontalDragUpdate: (details) {
-                _scrollController.jumpTo(_scrollController.offset - details.primaryDelta!);
+                _scrollController
+                    .jumpTo(_scrollController.offset - details.primaryDelta!);
               },
               child: Container(
                 height: MediaQuery.of(context).size.height,
@@ -1122,11 +1392,13 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                     padding: EdgeInsets.all(8),
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
-                        minWidth: (350 * lines.length) + (12 * (lines.length - 1)).toDouble(),
+                        minWidth: (350 * lines.length) +
+                            (12 * (lines.length - 1)).toDouble(),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: lines.map((line) => _buildLineCard(line)).toList(),
+                        children:
+                            lines.map((line) => _buildLineCard(line)).toList(),
                       ),
                     ),
                   ),
@@ -1138,14 +1410,15 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
 
   Widget _buildLineCard(String line) {
     String selectedContract = _selectedContracts[line] ?? "";
-    List<Map<String, dynamic>> sortedProcesses = _getSortedProcesses(line, selectedContract);
+    List<Map<String, dynamic>> sortedProcesses =
+        _getSortedProcesses(line, selectedContract);
 
     return Container(
       width: 350,
-      height: MediaQuery.of(context).size.height - 
-              kToolbarHeight -
-              MediaQuery.of(context).padding.top -
-              16,
+      height: MediaQuery.of(context).size.height -
+          kToolbarHeight -
+          MediaQuery.of(context).padding.top -
+          16,
       margin: EdgeInsets.only(right: 12),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1204,7 +1477,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
               ],
             ),
           ),
-          
+
           // Kontrak dengan drag and drop
           Container(
             height: 70,
@@ -1214,7 +1487,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                     child: Text(
                       "Tidak ada kontrak",
                       style: TextStyle(
-                        fontStyle: FontStyle.italic, 
+                        fontStyle: FontStyle.italic,
                         fontSize: 14,
                       ),
                     ),
@@ -1233,82 +1506,95 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                         onReorder: (oldIndex, newIndex) {
                           reorderContracts(line, oldIndex, newIndex);
                         },
-                        children: _contracts[line]!.asMap().entries.map((entry) {
-                            int index = entry.key;
-                            String contract = entry.value;
-                            bool isSelected = contract == selectedContract;
-                            
-                            return Container(
-                              key: ValueKey(contract),
-                              margin: EdgeInsets.only(right: 6),
-                              child: Row(
-                                children: [
-                                  GestureDetector(
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedContracts[line] = contract;
-                                      });
-                                    },
-                                    child: Container(
-                                      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: isSelected ? Colors.blue.shade700 : Colors.grey.shade200,
-                                        border: Border.all(
-                                          color: isSelected ? Colors.blue.shade800 : Colors.grey.shade400,
+                        children:
+                            _contracts[line]!.asMap().entries.map((entry) {
+                          int index = entry.key;
+                          String contract = entry.value;
+                          bool isSelected = contract == selectedContract;
+
+                          return Container(
+                            key: ValueKey(contract),
+                            margin: EdgeInsets.only(right: 6),
+                            child: Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedContracts[line] = contract;
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? Colors.blue.shade700
+                                          : Colors.grey.shade200,
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? Colors.blue.shade800
+                                            : Colors.grey.shade400,
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          contract,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: isSelected
+                                                ? Colors.white
+                                                : Colors.black,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            contract,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: isSelected ? Colors.white : Colors.black,
-                                              fontWeight: FontWeight.bold,
-                                            ),
+                                        SizedBox(height: 2),
+                                        Text(
+                                          "Urutan: ${index + 1}",
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: isSelected
+                                                ? Colors.white70
+                                                : Colors.grey.shade600,
                                           ),
-                                          SizedBox(height: 2),
-                                          Text(
-                                            "Urutan: ${index + 1}",
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: isSelected ? Colors.white70 : Colors.grey.shade600,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  IconButton(
-                                    icon: Icon(Icons.delete_outline, size: 16, color: Colors.red.shade600),
-                                    onPressed: () => deleteContract(line, contract),
-                                    padding: EdgeInsets.only(left: 4),
-                                    constraints: BoxConstraints(),
-                                    tooltip: 'Hapus Kontrak',
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline,
+                                      size: 16, color: Colors.red.shade600),
+                                  onPressed: () =>
+                                      deleteContract(line, contract),
+                                  padding: EdgeInsets.only(left: 4),
+                                  constraints: BoxConstraints(),
+                                  tooltip: 'Hapus Kontrak',
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
                       ),
                     ),
                   ),
           ),
-          
+
           Container(
             height: 1,
             color: Colors.grey.shade300,
             margin: EdgeInsets.symmetric(horizontal: 8),
           ),
-          
+
           Expanded(
             child: Container(
               padding: EdgeInsets.all(8),
-              child: _currentMode == 'Part' 
+              child: _currentMode == 'Part'
                   ? _buildPartContent(line, selectedContract, sortedProcesses)
-                  : _buildKumitateContent(line, selectedContract, sortedProcesses),
+                  : _buildKumitateContent(
+                      line, selectedContract, sortedProcesses),
             ),
           ),
         ],
@@ -1317,7 +1603,8 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   }
 
   // Widget untuk konten Part (tampilkan proses dengan warna hitam)
-  Widget _buildPartContent(String line, String selectedContract, List<Map<String, dynamic>> sortedProcesses) {
+  Widget _buildPartContent(String line, String selectedContract,
+      List<Map<String, dynamic>> sortedProcesses) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1340,7 +1627,6 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         SizedBox(height: 8),
-        
         Expanded(
           child: selectedContract.isEmpty
               ? Center(
@@ -1349,7 +1635,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                         ? "Pilih kontrak di atas"
                         : "Klik + untuk tambah kontrak",
                     style: TextStyle(
-                      fontStyle: FontStyle.italic, 
+                      fontStyle: FontStyle.italic,
                       fontSize: 14,
                     ),
                     textAlign: TextAlign.center,
@@ -1360,7 +1646,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                       child: Text(
                         "Tidak ada processes",
                         style: TextStyle(
-                          fontStyle: FontStyle.italic, 
+                          fontStyle: FontStyle.italic,
                           fontSize: 14,
                         ),
                       ),
@@ -1369,10 +1655,11 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                       itemCount: sortedProcesses.length,
                       itemBuilder: (context, index) {
                         Map<String, dynamic> process = sortedProcesses[index];
-                        
+
                         return Container(
                           margin: EdgeInsets.only(bottom: 6),
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
                             color: Colors.blue.shade50,
                             border: Border.all(color: Colors.blue.shade200),
@@ -1399,7 +1686,6 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                                 ),
                               ),
                               SizedBox(width: 12),
-                              
                               Expanded(
                                 child: Text(
                                   _formatProcessName(process['name']),
@@ -1422,7 +1708,8 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
   }
 
   // Widget untuk konten Kumitate (dengan edit sequence)
-  Widget _buildKumitateContent(String line, String selectedContract, List<Map<String, dynamic>> sortedProcesses) {
+  Widget _buildKumitateContent(String line, String selectedContract,
+      List<Map<String, dynamic>> sortedProcesses) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1445,7 +1732,6 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         SizedBox(height: 8),
-        
         Expanded(
           child: selectedContract.isEmpty
               ? Center(
@@ -1454,7 +1740,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                         ? "Pilih kontrak di atas"
                         : "Klik + untuk tambah kontrak",
                     style: TextStyle(
-                      fontStyle: FontStyle.italic, 
+                      fontStyle: FontStyle.italic,
                       fontSize: 14,
                     ),
                     textAlign: TextAlign.center,
@@ -1465,7 +1751,7 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                       child: Text(
                         "Tidak ada processes",
                         style: TextStyle(
-                          fontStyle: FontStyle.italic, 
+                          fontStyle: FontStyle.italic,
                           fontSize: 14,
                         ),
                       ),
@@ -1476,18 +1762,32 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                         Map<String, dynamic> process = sortedProcesses[index];
                         int sequence = process['sequence'] ?? 0;
                         String processName = process['name'];
-                        
+
                         // Inisialisasi controller dan focus node untuk proses ini
-                        _initializeSequenceController(line, selectedContract, processName, sequence);
-                        String key = _getSequenceKey(line, selectedContract, processName);
-                        
+                        _initializeSequenceController(
+                            line, selectedContract, processName, sequence);
+                        String key = _getSequenceKey(
+                            line, selectedContract, processName);
+
+                        // Inisialisasi target controller
+                        int target = process['target'] ?? 0;
+                        _initializeTargetController(
+                            line, selectedContract, processName, target);
+                        String targetKey =
+                            _getTargetKey(line, selectedContract, processName);
+
                         return Container(
                           margin: EdgeInsets.only(bottom: 6),
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: sequence > 0 ? Colors.green.shade50 : Colors.grey.shade100,
+                            color: sequence > 0
+                                ? Colors.green.shade50
+                                : Colors.grey.shade100,
                             border: Border.all(
-                              color: sequence > 0 ? Colors.green.shade200 : Colors.grey.shade300,
+                              color: sequence > 0
+                                  ? Colors.green.shade200
+                                  : Colors.grey.shade300,
                             ),
                             borderRadius: BorderRadius.circular(4),
                           ),
@@ -1497,7 +1797,9 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                                 width: 28,
                                 height: 28,
                                 decoration: BoxDecoration(
-                                  color: sequence > 0 ? Colors.blue.shade500 : Colors.grey.shade400,
+                                  color: sequence > 0
+                                      ? Colors.blue.shade500
+                                      : Colors.grey.shade400,
                                   shape: BoxShape.circle,
                                 ),
                                 child: Center(
@@ -1512,36 +1814,88 @@ class _EditProcessesScreenState extends State<EditProcessesScreen> {
                                 ),
                               ),
                               SizedBox(width: 12),
-                              
                               Expanded(
                                 child: Text(
                                   _formatProcessName(processName),
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
-                                    color: sequence > 0 ? Colors.black87 : Colors.grey.shade600,
+                                    color: sequence > 0
+                                        ? Colors.black87
+                                        : Colors.grey.shade600,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              
+                              // Target input (selalu tampil)
+                              ...[
+                                SizedBox(width: 6),
+                                Container(
+                                  width: 60,
+                                  child: TextFormField(
+                                    controller: _targetControllers[targetKey],
+                                    focusNode: _targetFocusNodes[targetKey],
+                                    keyboardType: TextInputType.number,
+                                    textInputAction: TextInputAction.next,
+                                    onEditingComplete: () =>
+                                        _updateProcessTargetFromController(line,
+                                            selectedContract, processName),
+                                    decoration: InputDecoration(
+                                      labelText: "Target",
+                                      border: OutlineInputBorder(),
+                                      contentPadding: EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 4),
+                                      labelStyle: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.orange.shade700),
+                                      isDense: true,
+                                      enabledBorder: OutlineInputBorder(
+                                        borderSide: BorderSide(
+                                            color: Colors.orange.shade300),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderSide: BorderSide(
+                                            color: Colors.orange.shade600,
+                                            width: 1.5),
+                                      ),
+                                    ),
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.orange.shade800),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                              SizedBox(width: 6),
                               Container(
                                 width: 60,
                                 child: TextFormField(
                                   controller: _sequenceControllers[key],
                                   focusNode: _sequenceFocusNodes[key],
                                   keyboardType: TextInputType.number,
-                                  textInputAction: index < sortedProcesses.length - 1 
-                                      ? TextInputAction.next 
-                                      : TextInputAction.done,
-                                  onEditingComplete: () => _onSequenceEditingComplete(
-                                    line, selectedContract, processName, index, sortedProcesses),
-                                  onFieldSubmitted: (_) => _onSequenceFieldSubmitted(
-                                    line, selectedContract, processName, index, sortedProcesses),
+                                  textInputAction:
+                                      index < sortedProcesses.length - 1
+                                          ? TextInputAction.next
+                                          : TextInputAction.done,
+                                  onEditingComplete: () =>
+                                      _onSequenceEditingComplete(
+                                          line,
+                                          selectedContract,
+                                          processName,
+                                          index,
+                                          sortedProcesses),
+                                  onFieldSubmitted: (_) =>
+                                      _onSequenceFieldSubmitted(
+                                          line,
+                                          selectedContract,
+                                          processName,
+                                          index,
+                                          sortedProcesses),
                                   decoration: InputDecoration(
                                     labelText: "Seq",
                                     border: OutlineInputBorder(),
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
                                     labelStyle: TextStyle(fontSize: 12),
                                     isDense: true,
                                   ),

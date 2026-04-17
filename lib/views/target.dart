@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
@@ -15,12 +16,14 @@ class TargetPage extends StatefulWidget {
 
 // InputFormatter to restrict decimals to fixed number of places
 class DecimalTextInputFormatter extends TextInputFormatter {
-  DecimalTextInputFormatter({required this.decimalRange}) : assert(decimalRange >= 0);
+  DecimalTextInputFormatter({required this.decimalRange})
+      : assert(decimalRange >= 0);
 
   final int decimalRange;
 
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
     String text = newValue.text;
     if (text == '') return newValue;
 
@@ -43,7 +46,7 @@ class DecimalTextInputFormatter extends TextInputFormatter {
 class _TargetPageState extends State<TargetPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   late DateTime _selectedDate;
-  
+
   // Maps untuk menyimpan controllers dan submitted status untuk setiap style
   final Map<String, List<TextEditingController>> _qtyStyleControllers = {};
   final Map<String, List<TextEditingController>> _timeStyleControllers = {};
@@ -55,7 +58,7 @@ class _TargetPageState extends State<TargetPage> {
     'D': false,
     'E': false,
   };
-  
+
   // Overtime state
   final Map<String, bool> _showOvertime = {
     'A': false,
@@ -81,8 +84,10 @@ class _TargetPageState extends State<TargetPage> {
     'D': false,
     'E': false,
   };
-  
+
   bool _isLoading = true;
+  bool _isLocked = false; // terkunci setelah jam 08:30
+  Timer? _lockTimer; // simpan referensi timer agar bisa dibatalkan
 
   @override
   void initState() {
@@ -95,6 +100,22 @@ class _TargetPageState extends State<TargetPage> {
       _overtimeSaved[line] = false;
     }
     _initializeData();
+    // Re-check lock status every minute in case 08:30 passes while page is open
+    _lockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) _checkLockStatus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _lockTimer?.cancel();
+    for (var line in ['A', 'B', 'C', 'D', 'E']) {
+      _qtyStyleControllers[line]?.forEach((c) => c.dispose());
+      _timeStyleControllers[line]?.forEach((c) => c.dispose());
+      _overtimeTimeControllers[line]?.dispose();
+      _overtimeQtyControllers[line]?.dispose();
+    }
+    super.dispose();
   }
 
   // Inisialisasi controllers untuk setiap line dengan 1 style default
@@ -107,10 +128,34 @@ class _TargetPageState extends State<TargetPage> {
   }
 
   Future<void> _initializeData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     _initializeStyleControllers();
     await _loadExistingTargets();
+    if (!mounted) return;
+    _checkLockStatus();
     setState(() => _isLoading = false);
+  }
+
+  void _checkLockStatus() {
+    final now = DateTime.now();
+    // Terkunci jika jam sudah >= 08:30 DAN tanggal yang dipilih adalah hari ini atau sebelumnya
+    final lockTime = DateTime(now.year, now.month, now.day, 8, 30);
+    final selectedDateOnly =
+        DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    final todayOnly = DateTime(now.year, now.month, now.day);
+    setState(() {
+      if (selectedDateOnly.isBefore(todayOnly)) {
+        // Tanggal lalu: selalu terkunci
+        _isLocked = true;
+      } else if (selectedDateOnly.isAtSameMomentAs(todayOnly)) {
+        // Hari ini: terkunci setelah 08:30
+        _isLocked = now.isAfter(lockTime);
+      } else {
+        // Tanggal mendatang: belum terkunci
+        _isLocked = false;
+      }
+    });
   }
 
   Future<void> _loadExistingTargets() async {
@@ -121,32 +166,37 @@ class _TargetPageState extends State<TargetPage> {
     try {
       final doc = await docRef.get();
       final data = doc.data();
-      
+
       setState(() {
         for (var line in ['A', 'B', 'C', 'D', 'E']) {
           final mapField = 'target_map_$line';
-          if (data != null && data.containsKey(mapField) && data[mapField] is Map) {
+          if (data != null &&
+              data.containsKey(mapField) &&
+              data[mapField] is Map) {
             Map<String, dynamic> m = Map<String, dynamic>.from(data[mapField]);
-            
+
             // Set line memiliki data
             _lineHasData[line] = true;
-            
+
             // Clear existing controllers
-            _qtyStyleControllers[line]?.forEach((controller) => controller.dispose());
-            _timeStyleControllers[line]?.forEach((controller) => controller.dispose());
-            
+            _qtyStyleControllers[line]
+                ?.forEach((controller) => controller.dispose());
+            _timeStyleControllers[line]
+                ?.forEach((controller) => controller.dispose());
+
             _qtyStyleControllers[line] = [];
             _timeStyleControllers[line] = [];
             _isSubmittedStyle[line] = [];
-            
+
             // Create controllers for each style
             int styleIndex = 0;
             m.forEach((styleKey, vals) {
               if (vals is Map && !styleKey.startsWith('overtime')) {
                 _qtyStyleControllers[line]!.add(TextEditingController());
                 _timeStyleControllers[line]!.add(TextEditingController());
-                _isSubmittedStyle[line]!.add(true); // Set to true karena data sudah ada
-                
+                _isSubmittedStyle[line]!
+                    .add(true); // Set to true karena data sudah ada
+
                 final q = vals['quantity']?.toString() ?? '';
                 // normalize and format time_perpcs to 3 decimals
                 String tText = '';
@@ -155,7 +205,8 @@ class _TargetPageState extends State<TargetPage> {
                   if (raw is num) {
                     tText = raw.toDouble().toStringAsFixed(3);
                   } else {
-                    final parsed = double.tryParse(raw.toString().replaceAll(',', '.'));
+                    final parsed =
+                        double.tryParse(raw.toString().replaceAll(',', '.'));
                     if (parsed != null) tText = parsed.toStringAsFixed(3);
                   }
                 }
@@ -171,10 +222,13 @@ class _TargetPageState extends State<TargetPage> {
               final overtimeData = m['overtime'];
               if (overtimeData is Map) {
                 _showOvertime[line] = true;
-                _selectedOvertime[line]!['start'] = overtimeData['start'] ?? '16:25';
+                _selectedOvertime[line]!['start'] =
+                    overtimeData['start'] ?? '16:55';
                 _selectedOvertime[line]!['end'] = overtimeData['end'] ?? '';
-                _overtimeTimeControllers[line]!.text = overtimeData['time_perpcs']?.toString() ?? '';
-                _overtimeQtyControllers[line]!.text = overtimeData['quantity']?.toString() ?? '';
+                _overtimeTimeControllers[line]!.text =
+                    overtimeData['time_perpcs']?.toString() ?? '';
+                _overtimeQtyControllers[line]!.text =
+                    overtimeData['quantity']?.toString() ?? '';
                 // If overtime exists in Firestore, consider it as already saved -> lock further edits
                 _overtimeSaved[line] = true;
               }
@@ -188,7 +242,7 @@ class _TargetPageState extends State<TargetPage> {
             }
             _lineHasData[line] = false;
             _showOvertime[line] = false;
-            _selectedOvertime[line] = {'start': '16:25', 'end': ''};
+            _selectedOvertime[line] = {'start': '16:55', 'end': ''};
             _overtimeTimeControllers[line]!.clear();
             _overtimeQtyControllers[line]!.clear();
           }
@@ -202,7 +256,7 @@ class _TargetPageState extends State<TargetPage> {
       for (var line in ['A', 'B', 'C', 'D', 'E']) {
         _lineHasData[line] = false;
         _showOvertime[line] = false;
-        _selectedOvertime[line] = {'start': '16:25', 'end': ''};
+        _selectedOvertime[line] = {'start': '16:55', 'end': ''};
         _overtimeTimeControllers[line]!.clear();
         _overtimeQtyControllers[line]!.clear();
       }
@@ -214,11 +268,12 @@ class _TargetPageState extends State<TargetPage> {
     // Cek apakah line sudah memiliki data
     if (_lineHasData[line]!) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Tidak bisa menambah style, data sudah tersimpan')),
+        SnackBar(
+            content: Text('Tidak bisa menambah style, data sudah tersimpan')),
       );
       return;
     }
-    
+
     setState(() {
       _qtyStyleControllers[line]!.add(TextEditingController());
       _timeStyleControllers[line]!.add(TextEditingController());
@@ -231,11 +286,12 @@ class _TargetPageState extends State<TargetPage> {
     // Cek apakah line sudah memiliki data
     if (_lineHasData[line]!) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Tidak bisa menghapus style, data sudah tersimpan')),
+        SnackBar(
+            content: Text('Tidak bisa menghapus style, data sudah tersimpan')),
       );
       return;
     }
-    
+
     if (_qtyStyleControllers[line]!.length > 1) {
       setState(() {
         _qtyStyleControllers[line]![index].dispose();
@@ -253,7 +309,7 @@ class _TargetPageState extends State<TargetPage> {
     setState(() {
       _showOvertime[line] = !_showOvertime[line]!;
       if (!_showOvertime[line]!) {
-        _selectedOvertime[line] = {'start': '16:25', 'end': ''};
+        _selectedOvertime[line] = {'start': '16:55', 'end': ''};
         _overtimeTimeControllers[line]!.clear();
         _overtimeQtyControllers[line]!.clear();
       }
@@ -263,7 +319,7 @@ class _TargetPageState extends State<TargetPage> {
   // Select overtime duration
   void _selectOvertimeDuration(String line, String endTime) {
     setState(() {
-      _selectedOvertime[line]!['start'] = '16:25';
+      _selectedOvertime[line]!['start'] = '16:55';
       _selectedOvertime[line]!['end'] = endTime;
       _calculateOvertimeQuantity(line);
     });
@@ -271,28 +327,38 @@ class _TargetPageState extends State<TargetPage> {
 
   // Calculate overtime quantity based on duration and time per pcs
   void _calculateOvertimeQuantity(String line) {
-    if (_selectedOvertime[line]!['end']!.isEmpty || _overtimeTimeControllers[line]!.text.isEmpty) {
+    if (_selectedOvertime[line]!['end']!.isEmpty ||
+        _overtimeTimeControllers[line]!.text.isEmpty) {
       return;
     }
 
     final timeText = _overtimeTimeControllers[line]!.text.replaceAll(',', '.');
     final timePerPcs = double.tryParse(timeText) ?? 0.0;
-    
+
     if (timePerPcs <= 0) {
       return;
     }
 
-    // Calculate duration in seconds based on selection (start: 16:25)
+    // Calculate duration in seconds based on selection
     int overtimeSeconds = 0;
     switch (_selectedOvertime[line]!['end']) {
-      case '16:55':
+      case '17:25':
         overtimeSeconds = 30 * 60; // 30 minutes
         break;
-      case '17:25':
+      case '17:55':
         overtimeSeconds = 60 * 60; // 60 minutes
         break;
-      case '17:55':
+      case '18:25':
         overtimeSeconds = 90 * 60; // 90 minutes
+        break;
+      case '18:55':
+        overtimeSeconds = 120 * 60; // 120 minutes
+        break;
+      case '19:25':
+        overtimeSeconds = 150 * 60; // 150 minutes
+        break;
+      case '19:55':
+        overtimeSeconds = 180 * 60; // 180 minutes
         break;
     }
 
@@ -316,6 +382,7 @@ class _TargetPageState extends State<TargetPage> {
         _isLoading = true;
       });
       await _loadExistingTargets();
+      _checkLockStatus();
       setState(() => _isLoading = false);
     }
   }
@@ -324,11 +391,13 @@ class _TargetPageState extends State<TargetPage> {
     final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
     Map<String, Map<String, dynamic>> detail = {};
     int total = 0;
-    
-    // helper: total productive seconds (07:30-12:00, break 30min, 12:30-16:00 = 8 jam)
+
+    // helper: total productive seconds (07:30-11:30, break 1h, 12:30-16:30)
     int totalProductiveSeconds() {
-      final morning = Duration(hours: 12, minutes: 0) - Duration(hours: 7, minutes: 30); // 4:30
-      final afternoon = Duration(hours: 16, minutes: 0) - Duration(hours: 12, minutes: 30); // 3:30
+      final morning = Duration(hours: 11, minutes: 30) -
+          Duration(hours: 7, minutes: 30); // 4:00
+      final afternoon = Duration(hours: 16, minutes: 30) -
+          Duration(hours: 12, minutes: 30); // 4:00
       return (morning + afternoon).inSeconds; // 28800
     }
 
@@ -355,7 +424,9 @@ class _TargetPageState extends State<TargetPage> {
       }
 
       if (q <= 0 || t <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Harap masukkan waktu (>0) atau quantity untuk style 1')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('Harap masukkan waktu (>0) atau quantity untuk style 1')));
         return;
       }
 
@@ -373,7 +444,8 @@ class _TargetPageState extends State<TargetPage> {
       final t2 = ((t2Raw * 1000).round()) / 1000.0;
 
       if (t1 <= 0 || t2 <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Harap masukkan waktu untuk kedua style (detik)')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Harap masukkan waktu untuk kedua style (detik)')));
         return;
       }
 
@@ -397,7 +469,9 @@ class _TargetPageState extends State<TargetPage> {
           detail['style1'] = {'quantity': q1, 'time_perpcs': t1};
           detail['style2'] = {'quantity': 0, 'time_perpcs': t2};
           total = q1;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Style 1 melebihi kapasitas, di-adjust menjadi $q1 unit')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(
+                  'Style 1 melebihi kapasitas, di-adjust menjadi $q1 unit')));
         } else {
           final remainingSec = totalSec - consumed;
           final q2 = (remainingSec / t2).floor();
@@ -416,27 +490,31 @@ class _TargetPageState extends State<TargetPage> {
         final qText = qCtrl.text;
         final tText = tCtrl.text;
 
-        if (qText.trim().isEmpty && tText.trim().isEmpty) continue; // skip empty
+        if (qText.trim().isEmpty && tText.trim().isEmpty)
+          continue; // skip empty
 
         final q = int.tryParse(qText) ?? 0;
         final tRaw = double.tryParse(tText.replaceAll(',', '.')) ?? 0.0;
         final t = ((tRaw * 1000).round()) / 1000.0;
 
         if (q < 0 || t < 0) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Nilai untuk style ${i+1} harus angka >= 0')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Nilai untuk style ${i + 1} harus angka >= 0')));
           return;
         }
 
-        detail['style${i+1}'] = {'quantity': q, 'time_perpcs': t};
+        detail['style${i + 1}'] = {'quantity': q, 'time_perpcs': t};
         total += q;
       }
     }
 
     // Add overtime data if exists
-      if (_showOvertime[line]! && _selectedOvertime[line]!['end']!.isNotEmpty) {
-      final overtimeTimeText = _overtimeTimeControllers[line]!.text.replaceAll(',', '.');
+    if (_showOvertime[line]! && _selectedOvertime[line]!['end']!.isNotEmpty) {
+      final overtimeTimeText =
+          _overtimeTimeControllers[line]!.text.replaceAll(',', '.');
       final overtimeTime = double.tryParse(overtimeTimeText) ?? 0.0;
-      final overtimeQty = int.tryParse(_overtimeQtyControllers[line]!.text) ?? 0;
+      final overtimeQty =
+          int.tryParse(_overtimeQtyControllers[line]!.text) ?? 0;
 
       if (overtimeTime > 0 && overtimeQty > 0) {
         detail['overtime'] = {
@@ -450,7 +528,8 @@ class _TargetPageState extends State<TargetPage> {
     }
 
     if (detail.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tidak ada input style untuk disimpan')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Tidak ada input style untuk disimpan')));
       return;
     }
 
@@ -468,10 +547,14 @@ class _TargetPageState extends State<TargetPage> {
         }
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Target style Line $line berhasil disimpan'), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Target style Line $line berhasil disimpan'),
+          backgroundColor: Colors.green));
       await _initializeData();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan target style: $e'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Gagal menyimpan target style: $e'),
+          backgroundColor: Colors.red));
     }
   }
 
@@ -483,7 +566,9 @@ class _TargetPageState extends State<TargetPage> {
     final overtimeTime = double.tryParse(timeText) ?? 0.0;
 
     if (overtimeEnd.isEmpty || overtimeTime <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Harap pilih durasi dan masukkan waktu overtime (>0)')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:
+              Text('Harap pilih durasi dan masukkan waktu overtime (>0)')));
       return;
     }
 
@@ -528,10 +613,14 @@ class _TargetPageState extends State<TargetPage> {
         _overtimeSaved[line] = true;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Overtime Line $line berhasil disimpan'), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Overtime Line $line berhasil disimpan'),
+          backgroundColor: Colors.green));
       await _initializeData();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan overtime: $e'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Gagal menyimpan overtime: $e'),
+          backgroundColor: Colors.red));
     }
   }
 
@@ -539,19 +628,34 @@ class _TargetPageState extends State<TargetPage> {
     () async {
       switch (line) {
         case 'A':
-          await Navigator.push(context, MaterialPageRoute(builder: (context) => LineAPage(date: _selectedDate)));
+          await Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => LineAPage(date: _selectedDate)));
           break;
         case 'B':
-          await Navigator.push(context, MaterialPageRoute(builder: (context) => LineBPage(date: _selectedDate)));
+          await Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => LineBPage(date: _selectedDate)));
           break;
         case 'C':
-          await Navigator.push(context, MaterialPageRoute(builder: (context) => LineCPage(date: _selectedDate)));
+          await Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => LineCPage(date: _selectedDate)));
           break;
         case 'D':
-          await Navigator.push(context, MaterialPageRoute(builder: (context) => LineDPage(date: _selectedDate)));
+          await Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => LineDPage(date: _selectedDate)));
           break;
         case 'E':
-          await Navigator.push(context, MaterialPageRoute(builder: (context) => LineEPage(date: _selectedDate)));
+          await Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => LineEPage(date: _selectedDate)));
           break;
       }
       await _initializeData();
@@ -559,54 +663,28 @@ class _TargetPageState extends State<TargetPage> {
   }
 
   @override
-  void dispose() {
-    // Dispose semua controllers
-    for (var line in ['A', 'B', 'C', 'D', 'E']) {
-      for (var controller in _qtyStyleControllers[line] ?? []) {
-        controller.dispose();
-      }
-      for (var controller in _timeStyleControllers[line] ?? []) {
-        controller.dispose();
-      }
-      _overtimeTimeControllers[line]?.dispose();
-      _overtimeQtyControllers[line]?.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: Colors.blue.shade100,
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        title: Text(
-          'Set Target Produksi',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            color: Colors.white,
-          ),
-        ),
+        title: const Text('Set Target Produksi'),
         centerTitle: true,
+        elevation: 0,
         flexibleSpace: Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.blue.shade400, Colors.blueAccent.shade700],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              colors: [Color(0xFF1565C0), Color(0xFF0D47A1)],
             ),
           ),
         ),
-        elevation: 4,
         actions: [
           IconButton(
-            icon: Icon(Icons.refresh, size: 26, color: Colors.white),
+            icon: const Icon(Icons.refresh, size: 26),
             tooltip: "Refresh Data",
             onPressed: () => _initializeData(),
-            splashRadius: 24,
           ),
-          SizedBox(width: 16),
+          const SizedBox(width: 16),
         ],
       ),
       body: _isLoading
@@ -617,9 +695,10 @@ class _TargetPageState extends State<TargetPage> {
                 children: [
                   // Date Picker Section
                   Card(
-                    elevation: 4,
+                    elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(14),
+                      side: BorderSide(color: Color(0xFFD7E2F5)),
                     ),
                     margin: EdgeInsets.all(12),
                     child: Padding(
@@ -643,14 +722,17 @@ class _TargetPageState extends State<TargetPage> {
                                 borderRadius: BorderRadius.circular(8),
                                 side: BorderSide(color: Colors.blue.shade500),
                               ),
-                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.calendar_today, size: 18, color: Colors.blue.shade700),
+                                Icon(Icons.calendar_today,
+                                    size: 18, color: Colors.blue.shade700),
                                 SizedBox(width: 4),
                                 Text(
-                                  DateFormat('yyyy-MM-dd').format(_selectedDate),
+                                  DateFormat('yyyy-MM-dd')
+                                      .format(_selectedDate),
                                   style: TextStyle(
                                     fontSize: 16,
                                     color: Colors.blue.shade700,
@@ -690,16 +772,20 @@ class _TargetPageState extends State<TargetPage> {
 
     // Overtime duration options
     final overtimeOptions = [
-      '16:55',
       '17:25',
       '17:55',
+      '18:25',
+      '18:55',
+      '19:25',
+      '19:55',
     ];
 
     return Card(
       margin: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      elevation: 4,
+      elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Color(0xFFD7E2F5)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -729,7 +815,7 @@ class _TargetPageState extends State<TargetPage> {
                     color: Colors.blue.shade800,
                   ),
                 ),
-                if (hasData) ...[
+                if (hasData && _isLocked) ...[
                   SizedBox(width: 8),
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -740,7 +826,8 @@ class _TargetPageState extends State<TargetPage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.lock, size: 14, color: Colors.green.shade800),
+                        Icon(Icons.lock,
+                            size: 14, color: Colors.green.shade800),
                         SizedBox(width: 4),
                         Text(
                           'Terkunci',
@@ -757,7 +844,7 @@ class _TargetPageState extends State<TargetPage> {
               ],
             ),
             SizedBox(height: 16),
-            
+
             // Style inputs section
             Column(
               children: List.generate(qtyControllers.length, (index) {
@@ -765,9 +852,13 @@ class _TargetPageState extends State<TargetPage> {
                   margin: EdgeInsets.only(bottom: 12),
                   padding: EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: hasData ? Colors.grey.shade100 : Colors.white,
+                    color: (hasData && _isLocked)
+                        ? Colors.grey.shade100
+                        : Colors.white,
                     border: Border.all(
-                      color: hasData ? Colors.grey.shade300 : Colors.grey.shade300,
+                      color: (hasData && _isLocked)
+                          ? Colors.grey.shade300
+                          : Colors.grey.shade300,
                     ),
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -780,14 +871,17 @@ class _TargetPageState extends State<TargetPage> {
                           Text(
                             'Style ${index + 1}',
                             style: TextStyle(
-                              fontWeight: FontWeight.bold, 
-                              color: hasData ? Colors.grey.shade600 : Colors.blue.shade800,
-                              fontSize: 16
-                            ),
+                                fontWeight: FontWeight.bold,
+                                color: (hasData && _isLocked)
+                                    ? Colors.grey.shade600
+                                    : Colors.blue.shade800,
+                                fontSize: 16),
                           ),
-                          if (qtyControllers.length > 1 && !hasData)
+                          if (qtyControllers.length > 1 &&
+                              !(hasData && _isLocked))
                             IconButton(
-                              icon: Icon(Icons.remove_circle, color: Colors.red),
+                              icon:
+                                  Icon(Icons.remove_circle, color: Colors.red),
                               onPressed: () => _removeStyle(line, index),
                               padding: EdgeInsets.zero,
                               constraints: BoxConstraints(),
@@ -801,12 +895,13 @@ class _TargetPageState extends State<TargetPage> {
                             child: TextField(
                               controller: qtyControllers[index],
                               keyboardType: TextInputType.number,
-                              enabled: !hasData, // Nonaktifkan jika sudah ada data
+                              enabled: !(hasData &&
+                                  _isLocked), // Nonaktifkan jika sudah ada data dan sudah jam 08:30
                               decoration: InputDecoration(
                                 labelText: 'Quantity',
                                 border: OutlineInputBorder(),
                                 isDense: true,
-                                enabled: !hasData,
+                                enabled: !(hasData && _isLocked),
                               ),
                             ),
                           ),
@@ -814,32 +909,37 @@ class _TargetPageState extends State<TargetPage> {
                           Expanded(
                             child: TextField(
                               controller: timeControllers[index],
-                              keyboardType: TextInputType.numberWithOptions(decimal: true),
-                              enabled: !hasData, // Nonaktifkan jika sudah ada data
+                              keyboardType: TextInputType.numberWithOptions(
+                                  decimal: true),
+                              enabled: !(hasData &&
+                                  _isLocked), // Nonaktifkan jika sudah ada data dan sudah jam 08:30
                               inputFormatters: [
-                                FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
+                                FilteringTextInputFormatter.allow(
+                                    RegExp(r'[0-9\.,]')),
                                 DecimalTextInputFormatter(decimalRange: 3),
                               ],
                               decoration: InputDecoration(
                                 labelText: 'Waktu /pcs (det)',
                                 border: OutlineInputBorder(),
                                 isDense: true,
-                                enabled: !hasData,
+                                enabled: !(hasData && _isLocked),
                               ),
                             ),
                           ),
                         ],
                       ),
-                      if (submittedStatus[index] || hasData)
+                      if (submittedStatus[index] || (hasData && _isLocked))
                         Padding(
                           padding: const EdgeInsets.only(top: 8.0),
                           child: Row(
                             children: [
-                              Icon(Icons.check_circle, color: Colors.green, size: 16),
+                              Icon(Icons.check_circle,
+                                  color: Colors.green, size: 16),
                               SizedBox(width: 4),
                               Text(
                                 'Tersimpan',
-                                style: TextStyle(color: Colors.green, fontSize: 12),
+                                style: TextStyle(
+                                    color: Colors.green, fontSize: 12),
                               ),
                             ],
                           ),
@@ -849,18 +949,19 @@ class _TargetPageState extends State<TargetPage> {
                 );
               }),
             ),
-            
+
             SizedBox(height: 8),
-            
+
             // Add Style Button - hanya tampil jika belum ada data
-            if (!hasData)
+            if (!(hasData && _isLocked))
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () => _addStyle(line),
                       icon: Icon(Icons.add, color: Colors.blue.shade700),
-                      label: Text('+ Style', style: TextStyle(color: Colors.blue.shade700)),
+                      label: Text('+ Style',
+                          style: TextStyle(color: Colors.blue.shade700)),
                       style: OutlinedButton.styleFrom(
                         padding: EdgeInsets.symmetric(vertical: 12),
                         side: BorderSide(color: Colors.blue.shade700),
@@ -869,7 +970,7 @@ class _TargetPageState extends State<TargetPage> {
                   ),
                 ],
               ),
-            
+
             // Overtime Section
             if (showOvertime) ...[
               SizedBox(height: 16),
@@ -886,21 +987,37 @@ class _TargetPageState extends State<TargetPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Overtime', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange.shade800)),
-                        IconButton(icon: Icon(Icons.close, color: Colors.red), onPressed: () => _toggleOvertime(line), padding: EdgeInsets.zero, constraints: BoxConstraints()),
+                        Text('Overtime',
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange.shade800)),
+                        IconButton(
+                            icon: Icon(Icons.close, color: Colors.red),
+                            onPressed: () => _toggleOvertime(line),
+                            padding: EdgeInsets.zero,
+                            constraints: BoxConstraints()),
                       ],
                     ),
                     SizedBox(height: 8),
-                    Text('Pilih Durasi Overtime:', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.orange.shade700)),
+                    Text('Pilih Durasi Overtime:',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.orange.shade700)),
                     SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: overtimeOptions.map((option) {
                         return FilterChip(
-                          label: Text('16:25 - $option'),
+                          label: Text('16:55 - $option'),
                           selected: selectedOvertime['end'] == option,
-                          onSelected: (_overtimeSaved[line] ?? false) ? null : (selected) { if (selected) _selectOvertimeDuration(line, option); },
+                          onSelected: (_overtimeSaved[line] ?? false)
+                              ? null
+                              : (selected) {
+                                  if (selected)
+                                    _selectOvertimeDuration(line, option);
+                                },
                           selectedColor: Colors.orange.shade300,
                           checkmarkColor: Colors.white,
                         );
@@ -911,13 +1028,22 @@ class _TargetPageState extends State<TargetPage> {
                       Row(
                         children: [
                           Expanded(
-                child: TextField(
-                  controller: _overtimeTimeControllers[line],
-                  keyboardType: TextInputType.numberWithOptions(decimal: true),
-                  enabled: !(_overtimeSaved[line] ?? false),
-                              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')), DecimalTextInputFormatter(decimalRange: 3)],
-                              onChanged: (value) => _calculateOvertimeQuantity(line),
-                              decoration: InputDecoration(labelText: 'Waktu /pcs (det)', border: OutlineInputBorder(), isDense: true),
+                            child: TextField(
+                              controller: _overtimeTimeControllers[line],
+                              keyboardType: TextInputType.numberWithOptions(
+                                  decimal: true),
+                              enabled: !(_overtimeSaved[line] ?? false),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                    RegExp(r'[0-9\.,]')),
+                                DecimalTextInputFormatter(decimalRange: 3)
+                              ],
+                              onChanged: (value) =>
+                                  _calculateOvertimeQuantity(line),
+                              decoration: InputDecoration(
+                                  labelText: 'Waktu /pcs (det)',
+                                  border: OutlineInputBorder(),
+                                  isDense: true),
                             ),
                           ),
                           SizedBox(width: 12),
@@ -926,7 +1052,12 @@ class _TargetPageState extends State<TargetPage> {
                               controller: _overtimeQtyControllers[line],
                               keyboardType: TextInputType.number,
                               enabled: false,
-                              decoration: InputDecoration(labelText: 'Quantity', border: OutlineInputBorder(), isDense: true, filled: true, fillColor: Colors.grey.shade200),
+                              decoration: InputDecoration(
+                                  labelText: 'Quantity',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  filled: true,
+                                  fillColor: Colors.grey.shade200),
                             ),
                           ),
                         ],
@@ -942,9 +1073,11 @@ class _TargetPageState extends State<TargetPage> {
                                   backgroundColor: Colors.blue.shade700,
                                   foregroundColor: Colors.white,
                                   padding: EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10)),
                                 ),
-                                child: Text('Simpan Overtime', style: TextStyle(color: Colors.white)),
+                                child: Text('Simpan Overtime',
+                                    style: TextStyle(color: Colors.white)),
                               ),
                             ),
                           ],
@@ -960,43 +1093,52 @@ class _TargetPageState extends State<TargetPage> {
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () => _toggleOvertime(line),
-                      icon: Icon(Icons.access_time, color: Colors.orange.shade700),
-                      label: Text('Overtime', style: TextStyle(color: Colors.orange.shade700)),
-                      style: OutlinedButton.styleFrom(padding: EdgeInsets.symmetric(vertical: 12), side: BorderSide(color: Colors.orange.shade700)),
+                      icon: Icon(Icons.access_time,
+                          color: Colors.orange.shade700),
+                      label: Text('Overtime',
+                          style: TextStyle(color: Colors.orange.shade700)),
+                      style: OutlinedButton.styleFrom(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          side: BorderSide(color: Colors.orange.shade700)),
                     ),
                   ),
                 ],
               ),
             ],
-            
+
             SizedBox(height: 16),
-            
+
             // Save and Actual buttons
             Row(
               children: [
                 Expanded(child: SizedBox()),
                 // Tombol Simpan - hanya tampil jika belum ada data
-                if (!hasData)
+                if (!(hasData && _isLocked))
                   ElevatedButton(
                     onPressed: () => _saveTargetByStyles(line),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue.shade700,
                       foregroundColor: Colors.white,
                       minimumSize: Size(160, 44),
-                      padding: EdgeInsets.symmetric(horizontal: 14.0, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 14.0, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: Text('Simpan Semua Style', style: TextStyle(color: Colors.white)),
+                    child: Text('Simpan Semua Style',
+                        style: TextStyle(color: Colors.white)),
                   ),
-                if (!hasData) SizedBox(width: 12),
+                if (!(hasData && _isLocked)) SizedBox(width: 12),
                 ElevatedButton(
                   onPressed: () => _navigateToLinePage(line),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue.shade700,
                     foregroundColor: Colors.white,
                     minimumSize: Size(160, 44),
-                    padding: EdgeInsets.symmetric(horizontal: 14.0, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 14.0, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   child: Text('Actual', style: TextStyle(color: Colors.white)),
                 ),

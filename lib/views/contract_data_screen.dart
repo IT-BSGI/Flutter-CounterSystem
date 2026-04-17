@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import '../utils/app_theme.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:dropdown_search/dropdown_search.dart';
 import 'dart:async';
@@ -14,10 +15,10 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
   int selectedYear = DateTime.now().year;
   int selectedMonth = DateTime.now().month;
   String? selectedContract;
-  
+
   bool isLoadingContracts = false;
   bool isLoadingData = false;
-  
+
   List<String> contractNames = [];
   List<PlutoColumn> columns = [];
   List<PlutoRow> rows = [];
@@ -51,15 +52,15 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
     "Gazet",
     "Kandome",
     "Bottan Tsuke",
-    "Maemi IN", 
-    "Maemi OUT", 
-    "Ushiro IN", 
+    "Maemi IN",
+    "Maemi OUT",
+    "Ushiro IN",
     "Ushiro OUT",
-    "Eri IN", 
-    "Eri OUT", 
-    "Sode IN", 
+    "Eri IN",
+    "Eri OUT",
+    "Sode IN",
     "Sode OUT",
-    "Cuff IN", 
+    "Cuff IN",
     "Cuff OUT",
   ];
 
@@ -77,19 +78,19 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
 
   Future<void> _loadMasterContracts() async {
     setState(() => isLoadingContracts = true);
-    
+
     try {
       // Mengambil kontrak dari struktur baru: basic_data/data_contracts/contracts/
-      QuerySnapshot contractsSnapshot = 
-          await FirebaseFirestore.instance
-              .collection('basic_data')
-              .doc('data_contracts')
-              .collection('contracts')
-              .get();
-      
+      QuerySnapshot contractsSnapshot = await FirebaseFirestore.instance
+          .collection('basic_data')
+          .doc('data_contracts')
+          .collection('contracts')
+          .get();
+
       if (contractsSnapshot.docs.isNotEmpty) {
         setState(() {
-          contractNames = contractsSnapshot.docs.map((doc) => doc.id).toList()..sort();
+          contractNames = contractsSnapshot.docs.map((doc) => doc.id).toList()
+            ..sort();
           if (contractNames.isNotEmpty && selectedContract == null) {
             selectedContract = contractNames.first;
           }
@@ -103,13 +104,19 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
       print('Error loading master contracts: $e');
       // Fallback: coba ambil dari struktur lama jika struktur baru tidak ada
       try {
-        DocumentSnapshot oldContractsSnapshot = 
-            await FirebaseFirestore.instance.collection('basic_data').doc('contracts').get();
-        
+        DocumentSnapshot oldContractsSnapshot = await FirebaseFirestore.instance
+            .collection('basic_data')
+            .doc('contracts')
+            .get();
+
         if (oldContractsSnapshot.exists) {
-          Map<String, dynamic> contractsData = _convertToStringDynamicMap(oldContractsSnapshot.data());
+          Map<String, dynamic> contractsData =
+              _convertToStringDynamicMap(oldContractsSnapshot.data());
           setState(() {
-            contractNames = contractsData.keys.where((key) => key.isNotEmpty).toList()..sort();
+            contractNames = contractsData.keys
+                .where((key) => key.isNotEmpty)
+                .toList()
+              ..sort();
             if (contractNames.isNotEmpty && selectedContract == null) {
               selectedContract = contractNames.first;
             }
@@ -146,9 +153,9 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
 
   Future<void> _loadContractData() async {
     if (selectedContract == null) return;
-    
+
     setState(() => isLoadingData = true);
-    
+
     try {
       final firstDay = DateTime(selectedYear, selectedMonth, 1);
       final lastDay = DateTime(selectedYear, selectedMonth + 1, 0);
@@ -156,7 +163,7 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
 
       // Cari semua proses yang ada untuk kontrak ini dengan mencari di semua tanggal
       final processNames = await _findAllProcessesForContract(datesInMonth);
-      
+
       if (processNames.isEmpty) {
         setState(() {
           rows = [];
@@ -165,16 +172,17 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
         });
         return;
       }
-      
+
       // Load data untuk semua tanggal dan proses
       final dateData = await _loadAllDateData(datesInMonth, processNames);
-      
+
       // Filter hanya tanggal yang memiliki data
       final datesWithData = _getDatesWithData(dateData, datesInMonth);
-      
+
       // Filter dan urutkan proses berdasarkan desiredOrder dan hanya yang memiliki data
-      final filteredProcessNames = _filterAndSortProcesses(processNames, dateData, datesWithData);
-      
+      final filteredProcessNames =
+          _filterAndSortProcesses(processNames, dateData, datesWithData);
+
       if (filteredProcessNames.isEmpty) {
         setState(() {
           rows = [];
@@ -183,10 +191,9 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
         });
         return;
       }
-      
+
       // Build tabel hanya dengan tanggal yang memiliki data dan proses yang difilter
       _buildTableStructure(datesWithData, filteredProcessNames, dateData);
-
     } catch (e) {
       print('Error loading contract data: $e');
     } finally {
@@ -195,20 +202,19 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
   }
 
   List<String> _filterAndSortProcesses(
-    List<String> processNames, 
-    Map<String, Map<String, Map<String, int>>> dateData, 
-    List<DateTime> datesWithData
-  ) {
+      List<String> processNames,
+      Map<String, Map<String, Map<String, int>>> dateData,
+      List<DateTime> datesWithData) {
     final processesWithData = <String>{};
-    
+
     // Cek setiap proses apakah memiliki data di setidaknya satu tanggal dan line
     for (final processName in processNames) {
       bool hasData = false;
-      
+
       for (final date in datesWithData) {
         final dateStr = DateFormat('yyyy-MM-dd').format(date);
         final processDateData = dateData[dateStr]?[processName];
-        
+
         if (processDateData != null) {
           for (final line in ["A", "B", "C", "D", "E"]) {
             if ((processDateData[line] ?? 0) > 0) {
@@ -219,38 +225,44 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
         }
         if (hasData) break;
       }
-      
+
       if (hasData) {
         processesWithData.add(processName);
       }
     }
-    
+
     // Urutkan berdasarkan desiredOrder dan hanya ambil yang ada di desiredOrder
-    final filteredAndSorted = desiredProcessOrder.where((process) => processesWithData.contains(process)).toList();
-    
+    final filteredAndSorted = desiredProcessOrder
+        .where((process) => processesWithData.contains(process))
+        .toList();
+
     print('Filtered to ${filteredAndSorted.length} processes with data');
     return filteredAndSorted;
   }
 
   List<DateTime> _generateDatesInMonth(DateTime firstDay, DateTime lastDay) {
     final dates = <DateTime>[];
-    for (var date = firstDay; date.isBefore(lastDay.add(Duration(days: 1))); date = date.add(Duration(days: 1))) {
+    for (var date = firstDay;
+        date.isBefore(lastDay.add(Duration(days: 1)));
+        date = date.add(Duration(days: 1))) {
       dates.add(date);
     }
     return dates;
   }
 
-  Future<List<String>> _findAllProcessesForContract(List<DateTime> datesInMonth) async {
+  Future<List<String>> _findAllProcessesForContract(
+      List<DateTime> datesInMonth) async {
     final processNames = <String>{};
-    
-    print('Searching processes in ${datesInMonth.length} dates for contract: $selectedContract');
-    
+
+    print(
+        'Searching processes in ${datesInMonth.length} dates for contract: $selectedContract');
+
     // Buat semua query sekaligus
     final queries = <Future<QuerySnapshot>>[];
-    
+
     for (final date in datesInMonth) {
       final dateStr = DateFormat('yyyy-MM-dd').format(date);
-      
+
       for (final line in ["A", "B", "C", "D", "E"]) {
         for (final type in ["Kumitate", "Part"]) {
           final contractRef = FirebaseFirestore.instance
@@ -270,71 +282,67 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
         }
       }
     }
-    
+
     // Eksekusi semua query secara parallel
     final snapshots = await Future.wait(queries);
-    
+
     for (final snapshot in snapshots) {
       for (final doc in snapshot.docs) {
         final processName = doc.id.replaceAll('_', ' ');
         processNames.add(processName);
       }
     }
-    
-    print('Total ${processNames.length} processes found for contract: $selectedContract');
+
+    print(
+        'Total ${processNames.length} processes found for contract: $selectedContract');
     return processNames.toList();
   }
 
   Future<Map<String, Map<String, Map<String, int>>>> _loadAllDateData(
       List<DateTime> dates, List<String> processNames) async {
     final allData = <String, Map<String, Map<String, int>>>{};
-    
+
     // Buat batch queries untuk semua tanggal
     final dateQueries = <Future<void>>[];
-    
+
     for (final date in dates) {
       dateQueries.add(_loadSingleDateData(date, processNames, allData));
     }
-    
+
     // Eksekusi parallel
     await Future.wait(dateQueries);
-    
+
     print('Loaded data for ${allData.length} dates');
     return allData;
   }
 
-  Future<void> _loadSingleDateData(
-      DateTime date, 
-      List<String> processNames, 
+  Future<void> _loadSingleDateData(DateTime date, List<String> processNames,
       Map<String, Map<String, Map<String, int>>> allData) async {
-    
     final dateStr = DateFormat('yyyy-MM-dd').format(date);
     final dateProcessData = <String, Map<String, int>>{};
-    
+
     // Buat queries untuk semua proses secara parallel
     final processQueries = <Future<void>>[];
-    
+
     for (final processName in processNames) {
-      processQueries.add(_loadProcessData(dateStr, processName, dateProcessData));
+      processQueries
+          .add(_loadProcessData(dateStr, processName, dateProcessData));
     }
-    
+
     await Future.wait(processQueries);
-    
+
     // Hanya simpan jika ada data
-    if (dateProcessData.values.any((processData) => 
-        processData.values.any((value) => value > 0))) {
+    if (dateProcessData.values
+        .any((processData) => processData.values.any((value) => value > 0))) {
       allData[dateStr] = dateProcessData;
     }
   }
 
-  Future<void> _loadProcessData(
-      String dateStr, 
-      String processName, 
+  Future<void> _loadProcessData(String dateStr, String processName,
       Map<String, Map<String, int>> dateProcessData) async {
-    
     final processLineData = <String, int>{};
     final lineQueries = <Future<void>>[];
-    
+
     for (final line in ["A", "B", "C", "D", "E"]) {
       lineQueries.add(_getProcessTotalForDateAndLine(dateStr, processName, line)
           .then((total) {
@@ -343,35 +351,33 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
         }
       }));
     }
-    
+
     await Future.wait(lineQueries);
-    
+
     if (processLineData.isNotEmpty) {
       dateProcessData[processName] = processLineData;
     }
   }
 
   List<DateTime> _getDatesWithData(
-      Map<String, Map<String, Map<String, int>>> dateData, 
+      Map<String, Map<String, Map<String, int>>> dateData,
       List<DateTime> allDates) {
     final datesWithData = <DateTime>[];
-    
+
     for (final date in allDates) {
       final dateStr = DateFormat('yyyy-MM-dd').format(date);
       final dateProcessData = dateData[dateStr];
-      
+
       if (dateProcessData != null && dateProcessData.isNotEmpty) {
         datesWithData.add(date);
       }
     }
-    
+
     print('Found ${datesWithData.length} dates with data');
     return datesWithData;
   }
 
-  void _buildTableStructure(
-      List<DateTime> dates, 
-      List<String> processNames,
+  void _buildTableStructure(List<DateTime> dates, List<String> processNames,
       Map<String, Map<String, Map<String, int>>> dateData) {
     columns = [];
     rows = [];
@@ -427,19 +433,19 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
       final cells = <String, PlutoCell>{
         "process_name": PlutoCell(value: processName),
       };
-      
+
       // Initialize all date-line cells with data from dateData
       for (final date in dates) {
         final dateStr = DateFormat('yyyy-MM-dd').format(date);
         final processDateData = dateData[dateStr]?[processName];
-        
+
         for (final line in ["A", "B", "C", "D", "E"]) {
           final fieldName = "${dateStr}_$line";
           final value = processDateData?[line] ?? 0;
           cells[fieldName] = PlutoCell(value: value);
         }
       }
-      
+
       rows.add(PlutoRow(cells: cells));
     }
 
@@ -447,20 +453,21 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
     for (final date in dates) {
       final dateStr = DateFormat('yyyy-MM-dd').format(date);
       final displayDateStr = DateFormat('dd-MM').format(date);
-      
+
       _addDateColumnsWithLines(displayDateStr, dateStr);
     }
-    
-    print('Table built with ${rows.length} processes and ${dates.length} dates');
+
+    print(
+        'Table built with ${rows.length} processes and ${dates.length} dates');
   }
 
   void _addDateColumnsWithLines(String displayDateStr, String dateStr) {
     final lineFields = <String>[];
-    
+
     for (final line in ["A", "B", "C", "D", "E"]) {
       final fieldName = "${dateStr}_$line";
       lineFields.add(fieldName);
-      
+
       columns.add(
         PlutoColumn(
           title: line,
@@ -483,7 +490,7 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
           renderer: (ctx) {
             final value = ctx.cell.value;
             final isWeekend = _isWeekend(dateStr);
-            
+
             return Container(
               constraints: BoxConstraints.expand(),
               alignment: Alignment.center,
@@ -521,34 +528,37 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
   bool _isWeekend(String dateStr) {
     try {
       final date = DateFormat('yyyy-MM-dd').parse(dateStr);
-      return date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+      return date.weekday == DateTime.saturday ||
+          date.weekday == DateTime.sunday;
     } catch (e) {
       return false;
     }
   }
 
-  Future<int> _getProcessTotalForDateAndLine(String dateStr, String processName, String line) async {
+  Future<int> _getProcessTotalForDateAndLine(
+      String dateStr, String processName, String line) async {
     try {
       final processDocName = processName.replaceAll(' ', '_');
       int total = 0;
-      
+
       // Query kedua tipe secara parallel
       final typeQueries = <Future<int>>[];
-      
+
       for (final type in ["Kumitate", "Part"]) {
         typeQueries.add(_getTypeTotal(dateStr, processDocName, line, type));
       }
-      
+
       final results = await Future.wait(typeQueries);
       total = results.fold(0, (sum, value) => sum + value);
-      
+
       return total;
     } catch (e) {
       return 0;
     }
   }
 
-  Future<int> _getTypeTotal(String dateStr, String processDocName, String line, String type) async {
+  Future<int> _getTypeTotal(
+      String dateStr, String processDocName, String line, String type) async {
     try {
       final processRef = FirebaseFirestore.instance
           .collection('counter_sistem')
@@ -559,17 +569,17 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
           .doc(processDocName);
 
       final doc = await processRef.get();
-      
+
       if (!doc.exists) return 0;
 
       final data = doc.data()!;
       int total = 0;
 
       data.forEach((key, value) {
-        if (key != 'sequence' && 
-            key != 'belumKensa' && 
-            key != 'stock_20min' && 
-            key != 'stock_pagi' && 
+        if (key != 'sequence' &&
+            key != 'belumKensa' &&
+            key != 'stock_20min' &&
+            key != 'stock_pagi' &&
             key != 'part' &&
             value is Map<String, dynamic>) {
           value.forEach((lineKey, lineValue) {
@@ -586,32 +596,23 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: Colors.blue.shade100,
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        title: Text(
-          "Contract Data",
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            color: Colors.white,
-          ),
-        ),
+        title: const Text('Contract Data'),
         centerTitle: true,
+        elevation: 0,
         flexibleSpace: Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.blue.shade400, Colors.blueAccent.shade700],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              colors: [Color(0xFF1565C0), Color(0xFF0D47A1)],
             ),
           ),
         ),
-        elevation: 4,
         actions: [
           IconButton(
-            icon: Icon(Icons.refresh, color: Colors.white),
+            icon: const Icon(Icons.refresh),
             tooltip: "Refresh Data",
             onPressed: () {
               _loadMasterContracts();
@@ -629,14 +630,15 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
             padding: EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 4,
-                  offset: Offset(0, 2),
+                  color: Colors.blue.shade50,
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
                 ),
               ],
+              border: Border(bottom: BorderSide(color: Colors.blue.shade100)),
             ),
             child: Row(
               children: [
@@ -658,7 +660,8 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                             decoration: InputDecoration(
                               hintText: "Search contract...",
                               border: OutlineInputBorder(),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                              contentPadding:
+                                  EdgeInsets.symmetric(horizontal: 12),
                             ),
                           ),
                           menuProps: MenuProps(
@@ -681,7 +684,9 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                               selectedItem ?? "Select Contract",
                               style: TextStyle(
                                 fontSize: 16,
-                                color: selectedItem != null ? Colors.black : Colors.grey,
+                                color: selectedItem != null
+                                    ? Colors.black
+                                    : Colors.grey,
                               ),
                             ),
                           );
@@ -715,7 +720,8 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue.shade500, width: 1),
+                        border:
+                            Border.all(color: Colors.blue.shade500, width: 1),
                       ),
                       padding: EdgeInsets.symmetric(horizontal: 8),
                       child: DropdownButtonHideUnderline(
@@ -727,7 +733,8 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                             return DropdownMenuItem(
                               value: year,
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
                                 child: Text(
                                   year.toString(),
                                   style: TextStyle(fontSize: 14),
@@ -742,7 +749,8 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                               _scheduleLoadData(); // Gunakan debounced version
                             }
                           },
-                          icon: Icon(Icons.arrow_drop_down, size: 24, color: Colors.blue.shade600),
+                          icon: Icon(Icons.arrow_drop_down,
+                              size: 24, color: Colors.blue.shade600),
                           style: TextStyle(color: Colors.black),
                           dropdownColor: Colors.white,
                         ),
@@ -754,7 +762,8 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue.shade500, width: 1),
+                        border:
+                            Border.all(color: Colors.blue.shade500, width: 1),
                       ),
                       padding: EdgeInsets.symmetric(horizontal: 8),
                       child: DropdownButtonHideUnderline(
@@ -766,7 +775,8 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                             return DropdownMenuItem(
                               value: month,
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
                                 child: Text(
                                   DateFormat('MMMM').format(DateTime(0, month)),
                                   style: TextStyle(fontSize: 14),
@@ -781,7 +791,8 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                               _scheduleLoadData(); // Gunakan debounced version
                             }
                           },
-                          icon: Icon(Icons.arrow_drop_down, size: 24, color: Colors.blue.shade600),
+                          icon: Icon(Icons.arrow_drop_down,
+                              size: 24, color: Colors.blue.shade600),
                           style: TextStyle(color: Colors.black),
                           dropdownColor: Colors.white,
                         ),
@@ -800,9 +811,13 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
                 : isLoadingData
                     ? _buildLoadingWidget("Loading contract data...")
                     : selectedContract == null
-                        ? _buildPlaceholderWidget("Please select a contract to view data", Icons.assignment)
+                        ? _buildPlaceholderWidget(
+                            "Please select a contract to view data",
+                            Icons.assignment)
                         : rows.isEmpty
-                            ? _buildPlaceholderWidget("No data available for selected contract", Icons.data_array)
+                            ? _buildPlaceholderWidget(
+                                "No data available for selected contract",
+                                Icons.data_array)
                             : _buildDataTable(),
           ),
         ],
@@ -893,22 +908,27 @@ class _ContractDataScreenState extends State<ContractDataScreen> {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: PlutoGrid(
-        key: ValueKey('${selectedContract}_${selectedYear}_${selectedMonth}_${rows.length}'),
+        key: ValueKey(
+            '${selectedContract}_${selectedYear}_${selectedMonth}_${rows.length}'),
         columns: columns,
         rows: rows,
         columnGroups: columnGroups,
         configuration: PlutoGridConfiguration(
           style: PlutoGridStyleConfig(
-            gridBackgroundColor: Colors.blue.shade50,
-            rowColor: Colors.blue.shade50,
-            borderColor: Colors.blue,
+            gridBackgroundColor: AppColors.primarySoft,
+            rowColor: Colors.white,
+            borderColor: AppColors.primaryDark,
             rowHeight: 32,
             columnHeight: 36,
-            cellTextStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            columnTextStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-            activatedBorderColor: Colors.blue,
-            activatedColor: Colors.blue.shade50,
-            gridBorderColor: Colors.blue,
+            cellTextStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textPrimary),
+            columnTextStyle: const TextStyle(
+                fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+            activatedBorderColor: AppColors.primary,
+            activatedColor: AppColors.primarySoft,
+            gridBorderColor: AppColors.primaryDark,
           ),
           scrollbar: PlutoGridScrollbarConfig(
             isAlwaysShown: true,

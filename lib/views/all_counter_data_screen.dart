@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/app_theme.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:excel/excel.dart' as excel;
@@ -37,11 +38,11 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
   List<PlutoColumn> kumitateColumns = [];
   List<PlutoRow> kumitateRows = [];
   List<PlutoColumnGroup> kumitateColumnGroups = [];
-  
+
   List<PlutoColumn> partColumns = [];
   List<PlutoRow> partRows = [];
   List<PlutoColumnGroup> partColumnGroups = [];
-  
+
   bool isLoading = true;
   String selectedLine = "A";
   DateTime selectedDate = DateTime.now();
@@ -53,20 +54,21 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
   bool noDataAvailable = false;
 
   final List<String> timeSlots = [
-    "08:30", "09:30", "10:30", "11:30", "12:00",
-    "13:00", "14:00", "15:00", "16:00",
-    "17:25", "17:55",
+    "08:30", "09:30", "10:30", "11:30",
+    "13:30", "14:30", "15:30", "16:30",
+    // Overtime slots (start at 16:55, per jam)
+    "17:55", "18:55", "19:55",
   ];
-  
+
   List<String> visibleTimeSlots = [];
 
   final Map<String, String> timeRangeMap = {
-    "06:30": "08:30", 
-    "06:45": "08:30", 
-    "07:00": "08:30", 
-    "07:15": "08:30", 
-    "07:30": "08:30", 
-    "07:45": "08:30", 
+    "06:30": "08:30",
+    "06:45": "08:30",
+    "07:00": "08:30",
+    "07:15": "08:30",
+    "07:30": "08:30",
+    "07:45": "08:30",
     "08:00": "08:30",
     "08:15": "08:30",
     "08:30": "09:30",
@@ -81,47 +83,61 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     "10:45": "11:30",
     "11:00": "11:30",
     "11:15": "11:30",
-    "11:30": "12:00",
-    "11:45": "12:00",
-    "12:00": "12:00",
-    "12:15": "13:00",
-    "12:30": "13:00",
-    "12:45": "13:00",
-    "13:00": "14:00",
-    "13:15": "14:00",
-    "13:30": "14:00",
-    "13:45": "14:00",
-    "14:00": "15:00",
-    "14:15": "15:00", 
-    "14:30": "15:00",
-    "14:45": "15:00",
-    "15:00": "16:00",
-    "15:15": "16:00",
-    "15:30": "16:00", 
-    "15:45": "16:00",
-    "16:00": "16:00",
-    "16:15": "17:25",
-    "16:30": "17:25",
-    "16:45": "17:25",
-    "17:00": "17:25",
-    "17:15": "17:25",
-    "17:30": "17:25",
+    "11:30": "13:30",
+    "11:45": "13:30",
+    "12:00": "13:30",
+    "12:15": "13:30",
+
+    "12:30": "13:30",
+    "12:45": "13:30",
+    "13:00": "13:30",
+    "13:15": "13:30",
+
+    "13:30": "14:30",
+    "13:45": "14:30",
+    "14:00": "14:30",
+    "14:15": "14:30",
+
+    "14:30": "15:30",
+    "14:45": "15:30",
+    "15:00": "15:30",
+    "15:15": "15:30",
+
+    "15:30": "16:30",
+    "15:45": "16:30",
+    "16:00": "16:30",
+    "16:15": "16:30",
+    "16:30": "16:30",
+    // Map post-16:30 minutes into overtime slots (start: 16:55, per jam)
+    "16:45": "17:55",
+    "17:00": "17:55",
+    "17:15": "17:55",
+    "17:30": "17:55",
     "17:45": "17:55",
-    "18:00": "17:55",
-    "18:15": "17:55",
-    "18:30": "17:55",
-    "18:45": "17:55",
-    "19:00": "17:55",
-    "19:15": "17:55",
-    "19:30": "17:55",
-    "19:45": "17:55",
-    "20:00": "17:55",
+
+    "18:00": "18:55",
+    "18:15": "18:55",
+    "18:30": "18:55",
+    "18:45": "18:55",
+
+    "19:00": "19:55",
+    "19:15": "19:55",
+    "19:30": "19:55",
+    "19:45": "19:55",
+    "20:00": "19:55",
   };
 
   final List<String> partProcessOrder = [
-    "Maemi IN", "Maemi OUT", "Ushiro IN", "Ushiro OUT",
-    "Eri IN", "Eri OUT", "Sode IN", "Sode OUT",
-    "Cuff IN", "Cuff OUT",
+    "Maemi IN",
+    "Maemi OUT",
+    "Ushiro IN",
+    "Ushiro OUT",
+    "Eri IN",
+    "Eri OUT",
+    "Sode IN",
+    "Sode OUT",
+    "Cuff IN",
+    "Cuff OUT",
   ];
 
   final List<String> kumitateProcessOrder = [
@@ -181,7 +197,10 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
   };
 
   final List<String> dividedByTwoProcesses = [
-    "Cuff IN", "Cuff OUT", "Sode IN", "Sode OUT"
+    "Cuff IN",
+    "Cuff OUT",
+    "Sode IN",
+    "Sode OUT"
   ];
 
   @override
@@ -213,7 +232,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     _cancelAllSubscriptions();
 
     final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
-    final parentDocRef = FirebaseFirestore.instance.collection('counter_sistem').doc(dateStr);
+    final parentDocRef =
+        FirebaseFirestore.instance.collection('counter_sistem').doc(dateStr);
 
     // Listen to top-level doc for target/plan changes
     _parentDocSub = parentDocRef.snapshots().listen((snapshot) async {
@@ -275,15 +295,13 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     });
   }
 
-  void _setupContractListeners(DocumentReference parentDocRef, List<String> contractCollections) {
+  void _setupContractListeners(
+      DocumentReference parentDocRef, List<String> contractCollections) {
     for (var s in _contractSubscriptions) s.cancel();
     _contractSubscriptions.clear();
 
     for (final contractName in contractCollections) {
-      final sub = parentDocRef
-          .collection(contractName)
-          .snapshots()
-          .listen((_) {
+      final sub = parentDocRef.collection(contractName).snapshots().listen((_) {
         loadData();
       }, onError: (e) {
         print('Contract listener error for $contractName: $e');
@@ -391,7 +409,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
     prosesRows = [];
     final prosesList = List<Map<String, dynamic>>.from(kumitateData);
-    
+
     prosesList.sort((a, b) {
       final aIndex = kumitateProcessOrder.indexOf(a['process_name'] ?? '');
       final bIndex = kumitateProcessOrder.indexOf(b['process_name'] ?? '');
@@ -399,13 +417,13 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       if (bIndex == -1) return -1;
       return aIndex.compareTo(bIndex);
     });
-    
+
     processNames = prosesList
-      .where((e) => (e['sequence'] ?? 0) != 0)
-      .map((e) => e["process_name"]?.toString() ?? "")
-      .where((e) => e.isNotEmpty)
-      .toList();
-      
+        .where((e) => (e['sequence'] ?? 0) != 0)
+        .map((e) => e["process_name"]?.toString() ?? "")
+        .where((e) => e.isNotEmpty)
+        .toList();
+
     processNames.sort((a, b) {
       final aIndex = kumitateProcessOrder.indexOf(a);
       final bIndex = kumitateProcessOrder.indexOf(b);
@@ -413,16 +431,17 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       if (bIndex == -1) return -1;
       return aIndex.compareTo(bIndex);
     });
-    
-    if (selectedProcessName == null || !processNames.contains(selectedProcessName)) {
+
+    if (selectedProcessName == null ||
+        !processNames.contains(selectedProcessName)) {
       selectedProcessName = processNames.isNotEmpty ? processNames.first : null;
     }
-    
+
     final proses = prosesList.firstWhere(
       (e) => e["process_name"]?.toString() == selectedProcessName,
       orElse: () => {},
     );
-    
+
     Set<String> slotsWithData = {};
     for (final time in timeSlots) {
       bool hasData = false;
@@ -437,19 +456,23 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         slotsWithData.add(time);
       }
     }
-    final visibleTimeSlotsProses = timeSlots.where((t) => slotsWithData.contains(t)).toList();
-    
+    final visibleTimeSlotsProses =
+        timeSlots.where((t) => slotsWithData.contains(t)).toList();
+
     for (final time in visibleTimeSlotsProses) {
       final cells = <String, PlutoCell>{};
       cells["time_slot"] = PlutoCell(value: time);
       for (int i = 1; i <= 5; i++) {
         final jamRaw = proses["${time}_$i"];
-        final jamValue = jamRaw == null ? 0 : (jamRaw is int ? jamRaw : int.tryParse(jamRaw.toString()) ?? 0);
+        final jamValue = jamRaw == null
+            ? 0
+            : (jamRaw is int ? jamRaw : int.tryParse(jamRaw.toString()) ?? 0);
         int akumulatif = 0;
         for (final t in visibleTimeSlotsProses) {
           final val = proses["${t}_$i"];
           if (t.compareTo(time) > 0) break;
-          akumulatif += (val is int ? val : int.tryParse(val?.toString() ?? '0') ?? 0);
+          akumulatif +=
+              (val is int ? val : int.tryParse(val?.toString() ?? '0') ?? 0);
           if (t == time) break;
         }
         cells["line_${i}_jam"] = PlutoCell(value: jamValue);
@@ -560,8 +583,10 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       return aIndex.compareTo(bIndex);
     });
 
-    if (selectedPartProcessName == null || !partProcessNames.contains(selectedPartProcessName)) {
-      selectedPartProcessName = partProcessNames.isNotEmpty ? partProcessNames.first : null;
+    if (selectedPartProcessName == null ||
+        !partProcessNames.contains(selectedPartProcessName)) {
+      selectedPartProcessName =
+          partProcessNames.isNotEmpty ? partProcessNames.first : null;
     }
 
     final partProses = partData.firstWhere(
@@ -579,9 +604,11 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         }
       }
     }
-    final visibleTimeSlotsPartProses = visibleTimeSlots.where((t) => slotsWithData.contains(t)).toList();
+    final visibleTimeSlotsPartProses =
+        visibleTimeSlots.where((t) => slotsWithData.contains(t)).toList();
 
-    final isDividedByTwo = dividedByTwoProcesses.contains(selectedPartProcessName);
+    final isDividedByTwo =
+        dividedByTwoProcesses.contains(selectedPartProcessName);
 
     partProsesRows = [];
     for (final time in visibleTimeSlotsPartProses) {
@@ -590,13 +617,16 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
       for (int i = 1; i <= 3; i++) {
         final jamRaw = partProses["${time}_$i"];
-        int jamInt = jamRaw is int ? jamRaw : int.tryParse(jamRaw?.toString() ?? '') ?? 0;
+        int jamInt = jamRaw is int
+            ? jamRaw
+            : int.tryParse(jamRaw?.toString() ?? '') ?? 0;
         if (isDividedByTwo) jamInt = (jamInt / 2).floor();
 
         int akumulatif = 0;
         for (final t in visibleTimeSlotsPartProses) {
           final val = partProses["${t}_$i"];
-          final valInt = val is int ? val : int.tryParse(val?.toString() ?? '') ?? 0;
+          final valInt =
+              val is int ? val : int.tryParse(val?.toString() ?? '') ?? 0;
           akumulatif += valInt;
           if (t == time) break;
         }
@@ -639,15 +669,17 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
   Future<void> _loadTargets({bool showSpinner = false}) async {
     if (showSpinner) setState(() => isTargetLoading = true);
-    
+
     final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
-    final docRef = FirebaseFirestore.instance.collection('counter_sistem').doc(dateStr);
+    final docRef =
+        FirebaseFirestore.instance.collection('counter_sistem').doc(dateStr);
 
     try {
       final doc = await docRef.get();
       if (doc.exists) {
         final data = doc.data()!;
-        final targetMap = data['target_map_$selectedLine'] as Map<String, dynamic>? ?? {};
+        final targetMap =
+            data['target_map_$selectedLine'] as Map<String, dynamic>? ?? {};
 
         Map<String, double> calculatedHourlyTargets = {
           for (var s in timeSlots) s: 0.0,
@@ -662,29 +694,34 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               styles.add({
                 'key': key,
                 'quantity': (value['quantity'] as num?)?.toDouble() ?? 0.0,
-                'time_perpcs': (value['time_perpcs'] as num?)?.toDouble() ?? 0.0,
+                'time_perpcs':
+                    (value['time_perpcs'] as num?)?.toDouble() ?? 0.0,
               });
             }
           });
 
           styles.sort((a, b) => a['key'].compareTo(b['key']));
 
-          List<String> overtimeTimeSlots = ['17:25', '17:55'];
-          List<String> normalTimeSlots = timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
+          List<String> overtimeTimeSlots = ['17:55', '18:55', '19:55'];
+          List<String> normalTimeSlots =
+              timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
           int currentTimeSlotIndex = 0;
 
           DateTime parseTime(String t) {
             final parts = t.split(':');
-            return DateTime(2000, 1, 1, int.parse(parts[0]), int.parse(parts[1]));
+            return DateTime(
+                2000, 1, 1, int.parse(parts[0]), int.parse(parts[1]));
           }
 
           DateTime morningStart = DateTime(2000, 1, 1, 7, 30);
-          DateTime morningEnd = DateTime(2000, 1, 1, 12, 0);
+          DateTime morningEnd = DateTime(2000, 1, 1, 11, 30);
           DateTime afternoonStart = DateTime(2000, 1, 1, 12, 30);
-          DateTime afternoonEnd = DateTime(2000, 1, 1, 16, 1);
-          
-          double productiveSeconds = morningEnd.difference(morningStart).inSeconds.toDouble()
-              + (afternoonEnd.difference(afternoonStart).inSeconds - 60).toDouble();
+          DateTime afternoonEnd = DateTime(2000, 1, 1, 16, 31);
+
+          double productiveSeconds =
+              morningEnd.difference(morningStart).inSeconds.toDouble() +
+                  (afternoonEnd.difference(afternoonStart).inSeconds - 60)
+                      .toDouble();
 
           final Map<String, double> slotRemainingSeconds = {};
           for (int idx = 0; idx < normalTimeSlots.length; idx++) {
@@ -698,15 +735,19 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
             }
 
             double avail = 0.0;
-            final overlapStart1 = start.isAfter(morningStart) ? start : morningStart;
+            final overlapStart1 =
+                start.isAfter(morningStart) ? start : morningStart;
             final overlapEnd1 = end.isBefore(morningEnd) ? end : morningEnd;
             if (overlapEnd1.isAfter(overlapStart1)) {
-              avail += overlapEnd1.difference(overlapStart1).inSeconds.toDouble();
+              avail +=
+                  overlapEnd1.difference(overlapStart1).inSeconds.toDouble();
             }
-            final overlapStart2 = start.isAfter(afternoonStart) ? start : afternoonStart;
+            final overlapStart2 =
+                start.isAfter(afternoonStart) ? start : afternoonStart;
             final overlapEnd2 = end.isBefore(afternoonEnd) ? end : afternoonEnd;
             if (overlapEnd2.isAfter(overlapStart2)) {
-              avail += overlapEnd2.difference(overlapStart2).inSeconds.toDouble();
+              avail +=
+                  overlapEnd2.difference(overlapStart2).inSeconds.toDouble();
             }
             slotRemainingSeconds[endLabel] = avail;
           }
@@ -717,9 +758,14 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
             if (timePerPcs <= 0) continue;
 
-            while (remainingQuantity > 0 && currentTimeSlotIndex < normalTimeSlots.length) {
+            while (remainingQuantity > 0 &&
+                currentTimeSlotIndex < normalTimeSlots.length) {
               final currentTimeSlot = normalTimeSlots[currentTimeSlotIndex];
-              double slotSec = slotRemainingSeconds[currentTimeSlot] ?? (productiveSeconds / (normalTimeSlots.isNotEmpty ? normalTimeSlots.length : 1));
+              double slotSec = slotRemainingSeconds[currentTimeSlot] ??
+                  (productiveSeconds /
+                      (normalTimeSlots.isNotEmpty
+                          ? normalTimeSlots.length
+                          : 1));
 
               if (slotSec <= 1e-9) {
                 currentTimeSlotIndex++;
@@ -732,9 +778,12 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                 continue;
               }
 
-              final allocated = possiblePieces >= remainingQuantity ? remainingQuantity : possiblePieces;
+              final allocated = possiblePieces >= remainingQuantity
+                  ? remainingQuantity
+                  : possiblePieces;
 
-              calculatedHourlyTargets[currentTimeSlot] = (calculatedHourlyTargets[currentTimeSlot] ?? 0.0) + allocated;
+              calculatedHourlyTargets[currentTimeSlot] =
+                  (calculatedHourlyTargets[currentTimeSlot] ?? 0.0) + allocated;
               remainingQuantity -= allocated;
               totalDailyTarget += allocated;
 
@@ -744,31 +793,46 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               if (slotSec <= 1e-9) currentTimeSlotIndex++;
             }
 
-            if (remainingQuantity > 0 && currentTimeSlotIndex >= normalTimeSlots.length) {
+            if (remainingQuantity > 0 &&
+                currentTimeSlotIndex >= normalTimeSlots.length) {
               break;
             }
           }
 
           if (targetMap.containsKey('overtime')) {
             final overtimeData = targetMap['overtime'] as Map<String, dynamic>;
-            double overtimeQuantity = (overtimeData['quantity'] as num?)?.toDouble() ?? 0.0;
-            double overtimeTimePerPcs = (overtimeData['time_perpcs'] as num?)?.toDouble() ?? 0.0;
+            double overtimeQuantity =
+                (overtimeData['quantity'] as num?)?.toDouble() ?? 0.0;
+            double overtimeTimePerPcs =
+                (overtimeData['time_perpcs'] as num?)?.toDouble() ?? 0.0;
 
             if (overtimeTimePerPcs > 0 && overtimeQuantity > 0) {
-              List<String> overtimeTimeSlots = ['16:25', '16:55', '17:25', '17:55'];
+              List<String> overtimeTimeSlots = ['17:55', '18:55', '19:55'];
               double remainingOvertime = overtimeQuantity;
-              final Map<String, double> overtimeSlotSec = { for (var s in overtimeTimeSlots) s: 1800.0 };
+              final Map<String, double> overtimeSlotSec = {
+                for (var s in overtimeTimeSlots) s: 1800.0
+              };
               int otIndex = 0;
-              while (remainingOvertime > 0 && otIndex < overtimeTimeSlots.length) {
+              while (
+                  remainingOvertime > 0 && otIndex < overtimeTimeSlots.length) {
                 final slot = overtimeTimeSlots[otIndex];
                 double slotSec = overtimeSlotSec[slot] ?? 3600.0;
-                if (slotSec <= 1e-9) { otIndex++; continue; }
+                if (slotSec <= 1e-9) {
+                  otIndex++;
+                  continue;
+                }
 
                 final possiblePieces = slotSec / overtimeTimePerPcs;
-                if (possiblePieces <= 1e-9) { otIndex++; continue; }
+                if (possiblePieces <= 1e-9) {
+                  otIndex++;
+                  continue;
+                }
 
-                final allocated = possiblePieces >= remainingOvertime ? remainingOvertime : possiblePieces;
-                calculatedHourlyTargets[slot] = (calculatedHourlyTargets[slot] ?? 0.0) + allocated;
+                final allocated = possiblePieces >= remainingOvertime
+                    ? remainingOvertime
+                    : possiblePieces;
+                calculatedHourlyTargets[slot] =
+                    (calculatedHourlyTargets[slot] ?? 0.0) + allocated;
                 remainingOvertime -= allocated;
                 totalDailyTarget += allocated;
 
@@ -783,11 +847,15 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           final target = data['target_$selectedLine'];
           if (target is num) {
             totalDailyTarget = target.toDouble();
-            List<String> overtimeTimeSlots = ['16:25', '16:55', '17:25', '17:55'];
-            final normalSlots = timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
-            final perSlot = normalSlots.isNotEmpty ? totalDailyTarget / normalSlots.length : 0.0;
+            List<String> overtimeTimeSlots = ['17:55', '18:55', '19:55'];
+            final normalSlots =
+                timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
+            final perSlot = normalSlots.isNotEmpty
+                ? totalDailyTarget / normalSlots.length
+                : 0.0;
             calculatedHourlyTargets = {
-              for (var s in timeSlots) s: (normalSlots.contains(s) ? perSlot : 0.0),
+              for (var s in timeSlots)
+                s: (normalSlots.contains(s) ? perSlot : 0.0),
             };
           }
         }
@@ -809,7 +877,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchCounterData(String date, String line, String type) async {
+  Future<List<Map<String, dynamic>>> fetchCounterData(
+      String date, String line, String type) async {
     try {
       final parentDocRef = FirebaseFirestore.instance
           .collection('counter_sistem')
@@ -818,7 +887,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           .doc(type);
 
       final parentDoc = await parentDocRef.get();
-      
+
       if (!parentDoc.exists) {
         print('No parent document found for Line $line, Type $type on $date');
         return [];
@@ -851,7 +920,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         final snapshot = await processRef.get();
 
         if (snapshot.docs.isEmpty) {
-          print('No documents found for Line $line, Contract $contract, Type $type on $date');
+          print(
+              'No documents found for Line $line, Contract $contract, Type $type on $date');
           continue;
         }
 
@@ -869,7 +939,12 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               "belumKensa": 0,
               "stock_20min": 0,
               "stock_pagi": {
-                '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, 'stock': 0
+                '1': 0,
+                '2': 0,
+                '3': 0,
+                '4': 0,
+                '5': 0,
+                'stock': 0
               },
               "part": part1,
               "part_2": part2,
@@ -904,52 +979,61 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
           final processData = process[rawDataKey] as Map<String, dynamic>;
 
-          final belumKensa = processData['belumKensa'] is String 
+          final belumKensa = processData['belumKensa'] is String
               ? int.tryParse(processData['belumKensa'] as String) ?? 0
               : (processData['belumKensa'] as num?)?.toInt() ?? 0;
           process["belumKensa"] = (process["belumKensa"] as int) + belumKensa;
 
-          final stock20min = processData['stock_20min'] is String 
+          final stock20min = processData['stock_20min'] is String
               ? int.tryParse(processData['stock_20min'] as String) ?? 0
               : (processData['stock_20min'] as num?)?.toInt() ?? 0;
           process["stock_20min"] = (process["stock_20min"] as int) + stock20min;
 
-          final stockPagi = processData['stock_pagi'] as Map<String, dynamic>? ?? {
-            '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, 'stock': 0
-          };
+          final stockPagi =
+              processData['stock_pagi'] as Map<String, dynamic>? ??
+                  {'1': 0, '2': 0, '3': 0, '4': 0, '5': 0, 'stock': 0};
           for (int i = 1; i <= 5; i++) {
-            final currentVal = (process["stock_pagi"] as Map<String, dynamic>)['$i'] ?? 0;
+            final currentVal =
+                (process["stock_pagi"] as Map<String, dynamic>)['$i'] ?? 0;
             final newVal = stockPagi['$i'] ?? 0;
-            (process["stock_pagi"] as Map<String, dynamic>)['$i'] = 
-                (currentVal is int ? currentVal : 0) + (newVal is int ? newVal : int.tryParse(newVal.toString()) ?? 0);
+            (process["stock_pagi"] as Map<String, dynamic>)['$i'] =
+                (currentVal is int ? currentVal : 0) +
+                    (newVal is int
+                        ? newVal
+                        : int.tryParse(newVal.toString()) ?? 0);
           }
 
           final stockPagiMap = process["stock_pagi"] as Map<String, dynamic>;
-          stockPagiMap['stock'] = 
-              (stockPagiMap['1'] as int) + 
-              (stockPagiMap['2'] as int) + 
-              (stockPagiMap['3'] as int) + 
-              (stockPagiMap['4'] as int) + 
+          stockPagiMap['stock'] = (stockPagiMap['1'] as int) +
+              (stockPagiMap['2'] as int) +
+              (stockPagiMap['3'] as int) +
+              (stockPagiMap['4'] as int) +
               (stockPagiMap['5'] as int);
 
           processData.forEach((key, value) {
-            if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && 
-                key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
+            if (key != 'sequence' &&
+                key != 'belumKensa' &&
+                key != 'stock_20min' &&
+                key != 'stock_pagi' &&
+                key != 'part' &&
+                value is Map<String, dynamic>) {
               final timeKey = key;
               final mappedTime = timeRangeMap[timeKey];
-              
+
               if (mappedTime != null) {
                 int slotTotal = 0;
                 for (int i = 1; i <= maxLines; i++) {
                   final dynamic countValue = value['$i'];
-                  final int count = countValue is num 
-                      ? countValue.toInt() 
+                  final int count = countValue is num
+                      ? countValue.toInt()
                       : int.tryParse(countValue.toString()) ?? 0;
                   slotTotal += count;
-                  
-                  process["${mappedTime}_$i"] = (process["${mappedTime}_$i"] as int) + count;
+
+                  process["${mappedTime}_$i"] =
+                      (process["${mappedTime}_$i"] as int) + count;
                 }
-                cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
+                cumulativeData[mappedTime] =
+                    (cumulativeData[mappedTime] ?? 0) + slotTotal;
               }
             }
           });
@@ -957,7 +1041,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
         Map<String, int> finalCumulative = {};
         int currentCumulative = 0;
-        
+
         for (String time in timeSlots) {
           currentCumulative += (cumulativeData[time] ?? 0);
           finalCumulative[time] = currentCumulative;
@@ -979,7 +1063,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           return aIndex.compareTo(bIndex);
         });
       } else {
-        processList.sort((a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
+        processList.sort(
+            (a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
       }
 
       print('Successfully merged $type data: ${processList.length} processes');
@@ -1013,9 +1098,12 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(processName, style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(processName,
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                     if (hiragana != null)
-                      Text('($hiragana)', style: TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                      Text('($hiragana)',
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.blueGrey)),
                   ],
                 ),
               ),
@@ -1118,19 +1206,28 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         cellPadding: EdgeInsets.zero,
         renderer: (rendererContext) {
           final part1 = rendererContext.cell.value?.toString() ?? '';
-          final part2 = rendererContext.row.cells['part_2']?.value?.toString() ?? '';
-          final firstSlot = visibleTimeSlots.isNotEmpty ? visibleTimeSlots.first : (timeSlots.isNotEmpty ? timeSlots.first : '08:30');
-          final targetPerJam = hourlyTargets.isNotEmpty ? ((hourlyTargets[firstSlot] ?? hourlyTargets.values.first) * 2) : 0;
-          
+          final part2 =
+              rendererContext.row.cells['part_2']?.value?.toString() ?? '';
+          final firstSlot = visibleTimeSlots.isNotEmpty
+              ? visibleTimeSlots.first
+              : (timeSlots.isNotEmpty ? timeSlots.first : '08:30');
+          final targetPerJam = hourlyTargets.isNotEmpty
+              ? ((hourlyTargets[firstSlot] ?? hourlyTargets.values.first) * 2)
+              : 0;
+
           if (part2.isNotEmpty) {
             final part1Value = int.tryParse(part1) ?? 0;
             final part2Value = int.tryParse(part2) ?? 0;
-            final color1 = part1.isEmpty || part1Value == 0 
-                ? Colors.blue.shade50 
-                : (part1Value >= targetPerJam ? Colors.green.shade200 : Colors.red.shade200);
-            final color2 = part2.isEmpty || part2Value == 0 
-                ? Colors.blue.shade50 
-                : (part2Value >= targetPerJam ? Colors.green.shade200 : Colors.red.shade200);
+            final color1 = part1.isEmpty || part1Value == 0
+                ? Colors.blue.shade50
+                : (part1Value >= targetPerJam
+                    ? Colors.green.shade200
+                    : Colors.red.shade200);
+            final color2 = part2.isEmpty || part2Value == 0
+                ? Colors.blue.shade50
+                : (part2Value >= targetPerJam
+                    ? Colors.green.shade200
+                    : Colors.red.shade200);
             return Container(
               height: 30,
               decoration: BoxDecoration(
@@ -1143,11 +1240,14 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                   Expanded(
                     child: Container(
                       alignment: Alignment.center,
-                      child: Text(part1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: Text(part1,
+                          style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold)),
                       decoration: BoxDecoration(
                         color: color1,
                         border: Border(
-                          right: BorderSide(color: Colors.blue.shade800, width: 1),
+                          right:
+                              BorderSide(color: Colors.blue.shade800, width: 1),
                         ),
                       ),
                     ),
@@ -1155,7 +1255,9 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                   Expanded(
                     child: Container(
                       alignment: Alignment.center,
-                      child: Text(part2, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: Text(part2,
+                          style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold)),
                       decoration: BoxDecoration(
                         color: color2,
                       ),
@@ -1166,9 +1268,11 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
             );
           } else {
             final part1Value = int.tryParse(part1) ?? 0;
-            final color1 = part1.isEmpty || part1Value == 0 
-                ? Colors.blue.shade50 
-                : (part1Value >= targetPerJam ? Colors.green.shade200 : Colors.red.shade200);
+            final color1 = part1.isEmpty || part1Value == 0
+                ? Colors.blue.shade50
+                : (part1Value >= targetPerJam
+                    ? Colors.green.shade200
+                    : Colors.red.shade200);
             return Container(
               height: 30,
               alignment: Alignment.center,
@@ -1178,7 +1282,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                   right: BorderSide(color: Colors.blue.shade800, width: 1),
                 ),
               ),
-              child: Text(part1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              child: Text(part1,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
             );
           }
         },
@@ -1225,7 +1330,16 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       PlutoColumnGroup(
         title: "Stock Pagi",
         backgroundColor: Colors.blue.shade300,
-        fields: ["stock_pagi_1", "stock_pagi_2", "stock_pagi_3", "stock_pagi_4", "stock_pagi_5", "part", "part_2", "stock_pagi_stock"],
+        fields: [
+          "stock_pagi_1",
+          "stock_pagi_2",
+          "stock_pagi_3",
+          "stock_pagi_4",
+          "stock_pagi_5",
+          "part",
+          "part_2",
+          "stock_pagi_stock"
+        ],
       ),
     ];
 
@@ -1279,7 +1393,9 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         cellPadding: EdgeInsets.zero,
         renderer: (rendererContext) {
           final value = rendererContext.cell.value?.toString() ?? '';
-          final firstSlot = visibleTimeSlots.isNotEmpty ? visibleTimeSlots.first : (timeSlots.isNotEmpty ? timeSlots.first : '08:30');
+          final firstSlot = visibleTimeSlots.isNotEmpty
+              ? visibleTimeSlots.first
+              : (timeSlots.isNotEmpty ? timeSlots.first : '08:30');
           final firstHourTarget = hourlyTargets[firstSlot] ?? 0.0;
           final partTarget = firstHourTarget * 2;
           BoxDecoration baseDecoration = BoxDecoration(
@@ -1293,19 +1409,29 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               height: 30,
               decoration: baseDecoration,
               alignment: Alignment.center,
-              child: Text('', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black)),
+              child: Text('',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black)),
             );
           }
           if (value.contains(',')) {
             final parts = value.split(',');
             final part1 = int.tryParse(parts[0].trim()) ?? 0;
-            final part2 = parts.length > 1 ? int.tryParse(parts[1].trim()) ?? 0 : 0;
-            final color1 = parts[0].trim().isEmpty || part1 == 0 
-                ? Colors.blue.shade50 
-                : (part1 >= partTarget ? Colors.green.shade200 : Colors.red.shade200);
-            final color2 = parts.length <= 1 || parts[1].trim().isEmpty || part2 == 0 
-                ? Colors.blue.shade50 
-                : (part2 >= partTarget ? Colors.green.shade200 : Colors.red.shade200);
+            final part2 =
+                parts.length > 1 ? int.tryParse(parts[1].trim()) ?? 0 : 0;
+            final color1 = parts[0].trim().isEmpty || part1 == 0
+                ? Colors.blue.shade50
+                : (part1 >= partTarget
+                    ? Colors.green.shade200
+                    : Colors.red.shade200);
+            final color2 =
+                parts.length <= 1 || parts[1].trim().isEmpty || part2 == 0
+                    ? Colors.blue.shade50
+                    : (part2 >= partTarget
+                        ? Colors.green.shade200
+                        : Colors.red.shade200);
             return Container(
               height: 30,
               decoration: baseDecoration,
@@ -1314,11 +1440,16 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                   Expanded(
                     child: Container(
                       alignment: Alignment.center,
-                      child: Text(parts[0].trim(), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black)),
+                      child: Text(parts[0].trim(),
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black)),
                       decoration: BoxDecoration(
                         color: color1,
                         border: Border(
-                          right: BorderSide(color: Colors.blue.shade800, width: 1),
+                          right:
+                              BorderSide(color: Colors.blue.shade800, width: 1),
                         ),
                       ),
                     ),
@@ -1326,7 +1457,11 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                   Expanded(
                     child: Container(
                       alignment: Alignment.center,
-                      child: Text(parts.length > 1 ? parts[1].trim() : '', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black)),
+                      child: Text(parts.length > 1 ? parts[1].trim() : '',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black)),
                       decoration: BoxDecoration(
                         color: color2,
                       ),
@@ -1337,14 +1472,20 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
             );
           } else {
             final part1 = int.tryParse(value) ?? 0;
-            final color1 = value.isEmpty || part1 == 0 
-                ? Colors.blue.shade50 
-                : (part1 >= partTarget ? Colors.green.shade200 : Colors.red.shade200);
+            final color1 = value.isEmpty || part1 == 0
+                ? Colors.blue.shade50
+                : (part1 >= partTarget
+                    ? Colors.green.shade200
+                    : Colors.red.shade200);
             return Container(
               height: 30,
               decoration: baseDecoration.copyWith(color: color1),
               alignment: Alignment.center,
-              child: Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black)),
+              child: Text(value,
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black)),
             );
           }
         },
@@ -1368,10 +1509,10 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           renderer: (rendererContext) {
             final total = rendererContext.cell.value as int;
             final target = hourlyTargets[time] ?? 0.0;
-            final color = target > 0 
+            final color = target > 0
                 ? (total >= target ? Colors.green : Colors.red)
                 : Colors.black;
-            
+
             return Container(
               height: 30,
               decoration: BoxDecoration(
@@ -1418,11 +1559,11 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               cumulativeTarget += (hourlyTargets[slot] ?? 0.0);
               if (slot == time) break;
             }
-            
-            final color = cumulativeTarget > 0 
+
+            final color = cumulativeTarget > 0
                 ? (cumulative >= cumulativeTarget ? Colors.green : Colors.red)
                 : Colors.black;
-            
+
             return Container(
               height: 30,
               decoration: BoxDecoration(
@@ -1465,7 +1606,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           renderer: (rendererContext) {
             final stockValue = rendererContext.cell.value;
             Color textColor = Colors.black;
-            
+
             if (stockValue is String && stockValue == '-') {
               textColor = Colors.black;
             } else if (stockValue is int) {
@@ -1477,7 +1618,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                 textColor = Colors.green;
               }
             }
-            
+
             return Container(
               height: 30,
               decoration: BoxDecoration(
@@ -1507,15 +1648,24 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         cumulativeTarget += (hourlyTargets[slot] ?? 0.0);
         if (slot == time) break;
       }
-      String groupTitle = ''.padLeft(60) + time + ''.padRight(40) + 'Target: ${cumulativeTarget.round()}';
+      String groupTitle = ''.padLeft(60) +
+          time +
+          ''.padRight(40) +
+          'Target: ${cumulativeTarget.round()}';
       kumitateColumnGroups.add(
         PlutoColumnGroup(
           title: groupTitle,
           backgroundColor: Colors.blue.shade300,
           fields: [
-            "${time}_1", "${time}_2", "${time}_3", "${time}_4", "${time}_5",
+            "${time}_1",
+            "${time}_2",
+            "${time}_3",
+            "${time}_4",
+            "${time}_5",
             "${time}_part_calc",
-            "${time}_total", "${time}_cumulative", "${time}_stock"
+            "${time}_total",
+            "${time}_cumulative",
+            "${time}_stock"
           ],
         ),
       );
@@ -1539,10 +1689,10 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         renderer: (rendererContext) {
           final total = rendererContext.cell.value as int;
           final target = dailyTarget ?? 0.0;
-          final color = target > 0 
+          final color = target > 0
               ? (total >= target ? Colors.green : Colors.red)
               : Colors.black;
-              
+
           return Container(
             height: 30,
             decoration: BoxDecoration(
@@ -1568,8 +1718,9 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     );
 
     kumitateRows = [];
-    final filteredKumitateData = kumitateData.where((e) => (e['sequence'] ?? 0) != 0).toList();
-    
+    final filteredKumitateData =
+        kumitateData.where((e) => (e['sequence'] ?? 0) != 0).toList();
+
     filteredKumitateData.sort((a, b) {
       final aIndex = kumitateProcessOrder.indexOf(a['process_name'] ?? '');
       final bIndex = kumitateProcessOrder.indexOf(b['process_name'] ?? '');
@@ -1577,13 +1728,12 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       if (bIndex == -1) return -1;
       return aIndex.compareTo(bIndex);
     });
-    
+
     if (filteredKumitateData.isNotEmpty) {
       for (int i = 0; i < filteredKumitateData.length; i++) {
         final entry = filteredKumitateData[i];
-        final stockPagi = entry["stock_pagi"] as Map<String, dynamic>? ?? {
-          '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, 'stock': 0
-        };
+        final stockPagi = entry["stock_pagi"] as Map<String, dynamic>? ??
+            {'1': 0, '2': 0, '3': 0, '4': 0, '5': 0, 'stock': 0};
         final processName = (entry["process_name"] ?? '').toString();
         final part1 = (entry["part"] ?? '').toString();
         final part2 = (entry["part_2"] ?? '').toString();
@@ -1592,7 +1742,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           "process_name": PlutoCell(value: entry["process_name"]),
           "type": PlutoCell(value: "Kumitate"),
           "stock_20min": PlutoCell(
-            value: entry["stock_20min"] is String 
+            value: entry["stock_20min"] is String
                 ? int.tryParse(entry["stock_20min"] as String) ?? 0
                 : (entry["stock_20min"] as num?)?.toInt() ?? 0,
           ),
@@ -1621,17 +1771,20 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           String partCalc = '';
           int getPartOutAccum(String outName) {
             final out = partData.firstWhere(
-              (e) => (e['process_name'] ?? '').toString().toLowerCase() == outName.toLowerCase(),
+              (e) =>
+                  (e['process_name'] ?? '').toString().toLowerCase() ==
+                  outName.toLowerCase(),
               orElse: () => {},
             );
             int cumulativeValue = (out["${time}_cumulative"] as int?) ?? 0;
-            
+
             if (dividedByTwoProcesses.contains(outName)) {
               cumulativeValue = (cumulativeValue / 2).floor();
             }
-            
+
             return cumulativeValue;
           }
+
           int getThisAccum() => (entry["${time}_cumulative"] as int?) ?? 0;
           bool hasPart1 = part1.isNotEmpty && part1 != '0';
           bool hasPart2 = part2.isNotEmpty && part2 != '0';
@@ -1669,8 +1822,9 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
           grandTotal += timeSlotTotal;
           cells["${time}_total"] = PlutoCell(value: timeSlotTotal);
-          cells["${time}_cumulative"] = PlutoCell(value: entry["${time}_cumulative"] ?? 0);
-          
+          cells["${time}_cumulative"] =
+              PlutoCell(value: entry["${time}_cumulative"] ?? 0);
+
           // Calculate stock for each time slot
           bool hasDataInThisTimeSlot = false;
           for (int line = 1; line <= 5; line++) {
@@ -1680,7 +1834,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
             }
           }
 
-          final List<String> overtimeSlots = ['17:25', '17:55'];
+          final List<String> overtimeSlots = ['17:55', '18:55', '19:55'];
           final bool isOvertimeSlot = overtimeSlots.contains(time);
 
           if (i == 0) {
@@ -1693,29 +1847,34 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               } else {
                 final previousProcess = filteredKumitateData[i - 1];
 
-                int findLatestCumulative(Map<String, dynamic> proc, String targetTime) {
+                int findLatestCumulative(
+                    Map<String, dynamic> proc, String targetTime) {
                   final idx = timeSlots.indexOf(targetTime);
                   if (idx == -1) return 0;
                   for (int j = idx; j >= 0; j--) {
                     final key = '${timeSlots[j]}_cumulative';
                     final val = proc[key];
                     if (val != null) {
-                      final intVal = val is int ? val : int.tryParse(val?.toString() ?? '') ?? 0;
+                      final intVal = val is int
+                          ? val
+                          : int.tryParse(val?.toString() ?? '') ?? 0;
                       if (intVal != 0) return intVal;
                     }
                   }
                   return 0;
                 }
 
-                int previousCumulative = findLatestCumulative(previousProcess, time);
+                int previousCumulative =
+                    findLatestCumulative(previousProcess, time);
                 int currentCumulative = findLatestCumulative(entry, time);
                 final pagiStock = (cells['stock_pagi_1']?.value ?? 0) +
-                                (cells['stock_pagi_2']?.value ?? 0) +
-                                (cells['stock_pagi_3']?.value ?? 0) +
-                                (cells['stock_pagi_4']?.value ?? 0) +
-                                (cells['stock_pagi_5']?.value ?? 0);
+                    (cells['stock_pagi_2']?.value ?? 0) +
+                    (cells['stock_pagi_3']?.value ?? 0) +
+                    (cells['stock_pagi_4']?.value ?? 0) +
+                    (cells['stock_pagi_5']?.value ?? 0);
                 cells["stock_pagi_stock"] = PlutoCell(value: pagiStock);
-                final stockValue = pagiStock + previousCumulative - currentCumulative;
+                final stockValue =
+                    pagiStock + previousCumulative - currentCumulative;
                 cells["${time}_stock"] = PlutoCell(value: stockValue);
               }
             } else {
@@ -1733,18 +1892,20 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                     }
                   }
                   if (hasPreviousData) {
-                    previousCumulative = previousProcess["${time}_cumulative"] ?? 0;
+                    previousCumulative =
+                        previousProcess["${time}_cumulative"] ?? 0;
                     break;
                   }
                 }
                 final currentCumulative = entry["${time}_cumulative"] ?? 0;
                 final pagiStock = (cells['stock_pagi_1']?.value ?? 0) +
-                                (cells['stock_pagi_2']?.value ?? 0) +
-                                (cells['stock_pagi_3']?.value ?? 0) +
-                                (cells['stock_pagi_4']?.value ?? 0) +
-                                (cells['stock_pagi_5']?.value ?? 0);
+                    (cells['stock_pagi_2']?.value ?? 0) +
+                    (cells['stock_pagi_3']?.value ?? 0) +
+                    (cells['stock_pagi_4']?.value ?? 0) +
+                    (cells['stock_pagi_5']?.value ?? 0);
                 cells["stock_pagi_stock"] = PlutoCell(value: pagiStock);
-                final stockValue = pagiStock + previousCumulative - currentCumulative;
+                final stockValue =
+                    pagiStock + previousCumulative - currentCumulative;
                 cells["${time}_stock"] = PlutoCell(value: stockValue);
               }
             }
@@ -1770,7 +1931,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           );
         })(),
     ];
-    
+
     partColumns = [
       PlutoColumn(
         title: "PROCESS",
@@ -1795,10 +1956,13 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text(processName, style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(processName,
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                       if (hiragana != null) ...[
                         SizedBox(width: 6),
-                        Text('($hiragana)', style: TextStyle(fontSize: 13, color: Colors.black)),
+                        Text('($hiragana)',
+                            style:
+                                TextStyle(fontSize: 13, color: Colors.black)),
                       ],
                     ],
                   ),
@@ -1828,7 +1992,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           );
         },
       ),
-      
       for (final time in visibleTimeSlots)
         PlutoColumn(
           title: time,
@@ -1851,11 +2014,11 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               cumulativeTarget += (hourlyTargets[slot] ?? 0.0);
               if (slot == time) break;
             }
-            
-            final color = cumulativeTarget > 0 
+
+            final color = cumulativeTarget > 0
                 ? (cumulative >= cumulativeTarget ? Colors.green : Colors.red)
                 : Colors.black;
-            
+
             return Container(
               height: 30,
               child: Center(
@@ -1871,7 +2034,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
             );
           },
         ),
-      
       PlutoColumn(
         title: "Stock sebelum kensa (pagi)",
         field: "belumKensa",
@@ -1903,14 +2065,14 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     ];
 
     partRows = [];
-    
+
     if (partData.isNotEmpty) {
       for (final entry in partData) {
         final cells = <String, PlutoCell>{};
         cells["process_name"] = PlutoCell(value: entry["process_name"]);
         cells["type"] = PlutoCell(value: "Part");
         cells["belumKensa"] = PlutoCell(
-          value: entry["belumKensa"] is String 
+          value: entry["belumKensa"] is String
               ? int.tryParse(entry["belumKensa"] as String) ?? 0
               : (entry["belumKensa"] as num?)?.toInt() ?? 0,
         );
@@ -1919,16 +2081,14 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           for (int i = 1; i <= 3; i++) {
             entry["${time}_$i"] = (entry["${time}_$i"] as num?)?.toInt() ?? 0;
           }
-          
+
           if (dividedByTwoProcesses.contains(entry["process_name"])) {
             final cumulativeValue = entry["${time}_cumulative"] ?? 0;
-            cells["${time}_cumulative"] = PlutoCell(
-              value: (cumulativeValue / 2).floor()
-            );
+            cells["${time}_cumulative"] =
+                PlutoCell(value: (cumulativeValue / 2).floor());
           } else {
-            cells["${time}_cumulative"] = PlutoCell(
-              value: entry["${time}_cumulative"] ?? 0
-            );
+            cells["${time}_cumulative"] =
+                PlutoCell(value: entry["${time}_cumulative"] ?? 0);
           }
         }
 
@@ -1944,17 +2104,19 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         noDataAvailable = false;
       });
     }
-    
-    print('Loading ALL data for Line $selectedLine on ${DateFormat('yyyy-MM-dd').format(selectedDate)}');
+
+    print(
+        'Loading ALL data for Line $selectedLine on ${DateFormat('yyyy-MM-dd').format(selectedDate)}');
 
     final formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
-    
+
     try {
-      final kumitateFuture = fetchCounterData(formattedDate, selectedLine, 'Kumitate');
+      final kumitateFuture =
+          fetchCounterData(formattedDate, selectedLine, 'Kumitate');
       final partFuture = fetchCounterData(formattedDate, selectedLine, 'Part');
-      
+
       final results = await Future.wait([kumitateFuture, partFuture]);
-      
+
       kumitateData = results[0];
       partData = results[1];
 
@@ -1980,7 +2142,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         _buildPartColumnsAndRows();
         _buildProsesTable();
         _buildPartProsesTable();
-        print('ALL Data loaded successfully: ${kumitateData.length} kumitate, ${partData.length} part');
+        print(
+            'ALL Data loaded successfully: ${kumitateData.length} kumitate, ${partData.length} part');
         print('Visible timeslots: $visibleTimeSlots');
       }
     } catch (e) {
@@ -1999,9 +2162,14 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
   Widget buildChart(String processName, String type) {
     final dataList = type == 'Kumitate' ? kumitateData : partData;
-    final process = dataList.firstWhere((e) => e["process_name"] == processName);
+    final process =
+        dataList.firstWhere((e) => e["process_name"] == processName);
     final lineColors = [
-      Colors.red, Colors.green, Colors.blue, Colors.orange, Colors.purple,
+      Colors.red,
+      Colors.green,
+      Colors.blue,
+      Colors.orange,
+      Colors.purple,
     ];
 
     final extendedTimeSlots = ["0", ...timeSlots];
@@ -2014,9 +2182,10 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         bool hasData = false;
         final spots = <FlSpot>[FlSpot(0, 0)];
         for (int t = 0; t < timeSlots.length; t++) {
-          final value = (process["${timeSlots[t]}_$lineNum"] as num?)?.toDouble() ?? 0;
+          final value =
+              (process["${timeSlots[t]}_$lineNum"] as num?)?.toDouble() ?? 0;
           if (value > 0) hasData = true;
-          spots.add(FlSpot((t+1).toDouble(), value));
+          spots.add(FlSpot((t + 1).toDouble(), value));
         }
         if (hasData) {
           activeLineNums.add(lineNum);
@@ -2118,7 +2287,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                         getTitlesWidget: (value, _) {
                           if (value != value.toInt()) return Container();
                           final index = value.toInt();
-                          if (index < 0 || index >= extendedTimeSlots.length) return Container();
+                          if (index < 0 || index >= extendedTimeSlots.length)
+                            return Container();
                           return Padding(
                             padding: const EdgeInsets.only(top: 4.0),
                             child: Text(
@@ -2148,12 +2318,15 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                         ),
                       ),
                     ),
-                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles:
+                        AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles:
+                        AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   ),
                   borderData: FlBorderData(
                     show: true,
-                    border: Border.all(color: const Color(0xff37434d), width: 1),
+                    border:
+                        Border.all(color: const Color(0xff37434d), width: 1),
                   ),
                   lineBarsData: lineBarsData,
                 ),
@@ -2171,13 +2344,13 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       final sheet = excelFile['Sheet1'];
 
       sheet.appendRow([
-        excel.TextCellValue('TYPE'), 
+        excel.TextCellValue('TYPE'),
         excel.TextCellValue('PROCESS'),
         ...timeSlots.map((e) => excel.TextCellValue(e)),
         excel.TextCellValue('Stock sebelum kensa (pagi)'),
         excel.TextCellValue('Stock 20 menit'),
         excel.TextCellValue('Stock Pagi 1'),
-        excel.TextCellValue('Stock Pagi 2'), 
+        excel.TextCellValue('Stock Pagi 2'),
         excel.TextCellValue('Stock Pagi 3'),
         excel.TextCellValue('Stock Pagi 4'),
         excel.TextCellValue('PART 1'),
@@ -2189,7 +2362,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         sheet.appendRow([
           excel.TextCellValue('Kumitate'),
           excel.TextCellValue(row.cells['process_name']!.value.toString()),
-          ...timeSlots.map((time) => excel.IntCellValue(row.cells['${time}_cumulative']!.value as int)),
+          ...timeSlots.map((time) => excel.IntCellValue(
+              row.cells['${time}_cumulative']!.value as int)),
           excel.IntCellValue(0),
           excel.IntCellValue(row.cells['stock_20min']!.value as int),
           excel.IntCellValue(row.cells['stock_pagi_1']!.value as int),
@@ -2208,7 +2382,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           excel.TextCellValue(row.cells['process_name']!.value.toString()),
           ...timeSlots.map((time) {
             int value = row.cells['${time}_cumulative']!.value as int;
-            if (dividedByTwoProcesses.contains(row.cells['process_name']!.value.toString())) {
+            if (dividedByTwoProcesses
+                .contains(row.cells['process_name']!.value.toString())) {
               value = (value / 2).floor();
             }
             return excel.IntCellValue(value);
@@ -2228,7 +2403,7 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
       final bytes = excelFile.save()!;
       final dateStr = DateFormat('yyyyMMdd').format(selectedDate);
       final fileName = 'Counter_Data_Line${selectedLine}_$dateStr.xlsx';
-      
+
       await FileSaver.instance.saveFile(
         name: fileName,
         bytes: Uint8List.fromList(bytes),
@@ -2253,37 +2428,28 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: Colors.blue.shade100,
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        title: Text(
-          "Stock Kumitate & Part per Process (All Contracts)",
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            color: Colors.white,
-          ),
-        ),
+        title: const Text('Stock Kumitate & Part per Process (All Contracts)'),
         centerTitle: true,
+        elevation: 0,
         flexibleSpace: Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.blue.shade400, Colors.blueAccent.shade700],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              colors: [Color(0xFF1565C0), Color(0xFF0D47A1)],
             ),
           ),
         ),
-        elevation: 4,
         actions: [
           IconButton(
-            icon: Icon(Icons.file_download, color: Colors.white),
+            icon: const Icon(Icons.file_download),
             tooltip: "Export to Excel",
             onPressed: exportToExcel,
           ),
           IconButton(
-            icon: Icon(Icons.refresh, color: Colors.white),
+            icon: const Icon(Icons.refresh),
             tooltip: "Refresh Data",
             onPressed: () async {
               setState(() {
@@ -2331,11 +2497,13 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                             onPressed: () => selectDate(context),
                             child: Text("Pilih Tanggal"),
                             style: ElevatedButton.styleFrom(
-                              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 12),
                             ),
                           ),
                           Container(
-                            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(6),
@@ -2344,10 +2512,12 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<String>(
                                 value: selectedLine,
-                                items: ["A", "B", "C", "D", "E"].map((line) => DropdownMenuItem(
-                                  value: line,
-                                  child: Text('Line $line'),
-                                )).toList(),
+                                items: ["A", "B", "C", "D", "E"]
+                                    .map((line) => DropdownMenuItem(
+                                          value: line,
+                                          child: Text('Line $line'),
+                                        ))
+                                    .toList(),
                                 onChanged: (value) async {
                                   if (value == null) return;
                                   setState(() {
@@ -2386,7 +2556,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.blue.shade500, width: 1),
+                                border: Border.all(
+                                    color: Colors.blue.shade500, width: 1),
                               ),
                               padding: EdgeInsets.symmetric(horizontal: 8),
                               child: DropdownButtonHideUnderline(
@@ -2421,25 +2592,27 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                                       });
                                     }
                                   },
-                                  icon: Icon(Icons.arrow_drop_down, size: 20, color: Colors.blue.shade600),
+                                  icon: Icon(Icons.arrow_drop_down,
+                                      size: 20, color: Colors.blue.shade600),
                                   style: TextStyle(color: Colors.black),
                                   dropdownColor: Colors.white,
                                 ),
                               ),
                             ),
-                            
                             Container(
                               decoration: BoxDecoration(
                                 color: Colors.blue.shade100,
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
                               child: isTargetLoading
                                   ? Center(
                                       child: SizedBox(
                                         width: 16,
                                         height: 16,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
                                       ),
                                     )
                                   : Text(
@@ -2451,27 +2624,31 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                                       ),
                                     ),
                             ),
-                            
                             Container(
                               width: 140,
                               child: TextButton(
                                 style: TextButton.styleFrom(
-                                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
                                   backgroundColor: Colors.white,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(4),
-                                    side: BorderSide(color: Colors.blue.shade500, width: 1),
+                                    side: BorderSide(
+                                        color: Colors.blue.shade500, width: 1),
                                   ),
                                 ),
                                 onPressed: () => selectDate(context),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.calendar_today, size: 18, color: Colors.blue.shade600),
+                                    Icon(Icons.calendar_today,
+                                        size: 18, color: Colors.blue.shade600),
                                     SizedBox(width: 6),
                                     Text(
-                                      DateFormat("yyyy-MM-dd").format(selectedDate),
-                                      style: TextStyle(fontSize: 14, color: Colors.black),
+                                      DateFormat("yyyy-MM-dd")
+                                          .format(selectedDate),
+                                      style: TextStyle(
+                                          fontSize: 14, color: Colors.black),
                                     ),
                                   ],
                                 ),
@@ -2480,7 +2657,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                           ],
                         ),
                       ),
-                      
                       if (kumitateRows.isNotEmpty) ...[
                         _buildTableWidget(
                           title: 'KUMITATE (All Contracts)',
@@ -2490,7 +2666,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                         ),
                         SizedBox(height: 30),
                       ],
-                      
                       if (partRows.isNotEmpty) ...[
                         _buildTableWidget(
                           title: 'PART (All Contracts)',
@@ -2500,7 +2675,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                         ),
                         SizedBox(height: 30),
                       ],
-                      
                       if (processNames.isNotEmpty)
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2513,16 +2687,19 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                               dropdownLabel: 'Pilih Proses Kumitate: ',
                               processDropdown: DropdownButton<String>(
                                 value: selectedProcessName,
-                                items: processNames.map((name) => DropdownMenuItem(
-                                  value: name,
-                                  child: Text(
-                                    name,
-                                    style: TextStyle(fontSize: 12),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                )).toList(),
+                                items: processNames
+                                    .map((name) => DropdownMenuItem(
+                                          value: name,
+                                          child: Text(
+                                            name,
+                                            style: TextStyle(fontSize: 12),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ))
+                                    .toList(),
                                 onChanged: (value) {
-                                  if (value != null && value != selectedProcessName) {
+                                  if (value != null &&
+                                      value != selectedProcessName) {
                                     setState(() {
                                       selectedProcessName = value;
                                       _buildProsesTable();
@@ -2533,7 +2710,6 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                             ),
                           ],
                         ),
-                      
                       if (partProcessNames.isNotEmpty) ...[
                         SizedBox(height: 30),
                         Column(
@@ -2547,16 +2723,19 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                               dropdownLabel: 'Pilih Proses Part: ',
                               processDropdown: DropdownButton<String>(
                                 value: selectedPartProcessName,
-                                items: partProcessNames.map((name) => DropdownMenuItem(
-                                  value: name,
-                                  child: Text(
-                                    name,
-                                    style: TextStyle(fontSize: 12),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                )).toList(),
+                                items: partProcessNames
+                                    .map((name) => DropdownMenuItem(
+                                          value: name,
+                                          child: Text(
+                                            name,
+                                            style: TextStyle(fontSize: 12),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ))
+                                    .toList(),
                                 onChanged: (value) {
-                                  if (value != null && value != selectedPartProcessName) {
+                                  if (value != null &&
+                                      value != selectedPartProcessName) {
                                     setState(() {
                                       selectedPartProcessName = value;
                                       _buildPartProsesTable();
@@ -2588,12 +2767,12 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
         isLoading = true;
         isTargetLoading = true;
       });
-      
+
       _cancelAllSubscriptions();
       await _loadTargets(showSpinner: true);
       await loadData(showLoading: true);
       _setupListeners();
-      
+
       if (mounted) {
         setState(() {
           isLoading = false;
@@ -2614,7 +2793,8 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
     const rowHeight = 30.0;
     const headerHeight = 40.0;
     const columnHeaderHeight = 30.0;
-    final totalHeight = headerHeight + columnHeaderHeight + (rows.length * rowHeight) + 6;
+    final totalHeight =
+        headerHeight + columnHeaderHeight + (rows.length * rowHeight) + 6;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0),
@@ -2624,13 +2804,13 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
           Container(
             height: headerHeight,
             decoration: BoxDecoration(
-              color: Colors.blue.shade300,
+              color: AppColors.primary,
               borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
             ),
             child: Center(
               child: Text(
                 title,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
@@ -2644,10 +2824,12 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
-                  Text(dropdownLabel ?? 'Pilih Proses: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(dropdownLabel ?? 'Pilih Proses: ',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
                   Container(
                     margin: const EdgeInsets.only(left: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       border: Border.all(color: Colors.blue.shade500, width: 1),
@@ -2678,15 +2860,26 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                 borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
               ),
               child: PlutoGrid(
-                key: ValueKey('${title}_${selectedDate}_${selectedLine}_${title == 'AKUMULATIF LINE (Kumitate)' ? (selectedProcessName ?? '') : ''}_${title == 'AKUMULATIF LINE (Part)' ? (selectedPartProcessName ?? '') : ''}'),
+                key: ValueKey(
+                    '${title}_${selectedDate}_${selectedLine}_${title == 'AKUMULATIF LINE (Kumitate)' ? (selectedProcessName ?? '') : ''}_${title == 'AKUMULATIF LINE (Part)' ? (selectedPartProcessName ?? '') : ''}'),
                 columns: columns,
                 rows: rows,
                 columnGroups: columnGroups,
                 configuration: PlutoGridConfiguration(
                   style: PlutoGridStyleConfig(
-                    gridBackgroundColor: Colors.blue.shade100,
-                    rowColor: Colors.blue.shade50,
-                    borderColor: Colors.blue.shade800,
+                    gridBackgroundColor: AppColors.primarySoft,
+                    rowColor: Colors.white,
+                    borderColor: AppColors.primaryDark,
+                    columnTextStyle: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    cellTextStyle: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    activatedBorderColor: AppColors.primary,
+                    activatedColor: AppColors.primarySoft,
                     rowHeight: rowHeight,
                     columnHeight: columnHeaderHeight,
                   ),
@@ -2699,8 +2892,12 @@ class _AllCounterDataScreenState extends State<AllCounterDataScreen> {
                 ),
                 rowColorCallback: title == 'PART (All Contracts)'
                     ? (PlutoRowColorContext rowContext) {
-                        final processName = rowContext.row.cells['process_name']?.value?.toString() ?? '';
-                        return getPartRowColor(processName) ?? Colors.transparent;
+                        final processName = rowContext
+                                .row.cells['process_name']?.value
+                                ?.toString() ??
+                            '';
+                        return getPartRowColor(processName) ??
+                            Colors.transparent;
                       }
                     : null,
                 mode: PlutoGridMode.readOnly,

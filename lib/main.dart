@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'firebase_options.dart';
+import 'utils/app_theme.dart';
 import 'views/dashboard.dart';
 import 'views/login_screen.dart';
 
@@ -22,10 +23,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
+      theme: AppTheme.lightTheme(),
       home: AuthWrapper(),
     );
   }

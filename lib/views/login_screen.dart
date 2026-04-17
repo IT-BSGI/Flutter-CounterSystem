@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../utils/responsive_helper.dart';
 // import 'dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -90,111 +92,141 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final r = Responsive.of(context);
+    final double formWidth = r.isDesktop
+        ? 420
+        : r.isTablet
+            ? 360
+            : 280;
+    final theme = Theme.of(context);
+
     return Scaffold(
-      backgroundColor: Colors.blue[50], // Latar belakang biru muda
+      backgroundColor: theme.colorScheme.background,
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text(
-                  "LOGIN",
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blueAccent,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: Center(
+            child: Container(
+              width: formWidth,
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.07),
+                    blurRadius: 28,
+                    offset: const Offset(0, 12),
                   ),
+                ],
+                border: Border.all(
+                  color: theme.dividerColor.withOpacity(0.8),
                 ),
-                const SizedBox(height: 20),
-
-                // Email Input
-                SizedBox(
-                  width: 250,
-                  child: TextFormField(
-                    controller: emailController,
-                    decoration: buildInputDecoration("Email", Icons.email),
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (value) =>
-                        value!.isEmpty ? "Masukkan email!" : null,
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // Password Input
-                SizedBox(
-                  width: 250,
-                  child: TextFormField(
-                    controller: passwordController,
-                    decoration: buildInputDecoration("Password", Icons.lock),
-                    obscureText: true,
-                    validator: (value) =>
-                        value!.isEmpty ? "Masukkan password!" : null,
-                    textInputAction: TextInputAction.done, // Menampilkan tombol "Done" di keyboard
-                    onFieldSubmitted: (value) => login(), // Menjalankan login saat Enter ditekan
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // Remember Me Checkbox
-                Row(
+              ),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Checkbox(
-                      value: rememberEmail,
-                      activeColor: Colors.blueAccent,
-                      onChanged: (value) {
-                        setState(() => rememberEmail = value!);
-                      },
+                    // Logo
+                    Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      padding: const EdgeInsets.all(12),
+                      child: Image.asset(
+                        'assets/logo.png',
+                        fit: BoxFit.contain,
+                      ),
                     ),
-                    const Text(
-                      "Remember Email",
-                      style: TextStyle(color: Colors.blueAccent),
+                    const SizedBox(height: 16),
+                    Text(
+                      "Counter System",
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      "LOGIN",
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 20),                    SizedBox(
+                      width: formWidth,
+                      child: TextFormField(
+                        controller: emailController,
+                        decoration: buildInputDecoration("Email", Icons.email),
+                        keyboardType: TextInputType.emailAddress,
+                        validator: (value) =>
+                            value!.isEmpty ? "Masukkan email!" : null,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: formWidth,
+                      child: TextFormField(
+                        controller: passwordController,
+                        decoration:
+                            buildInputDecoration("Password", Icons.lock),
+                        obscureText: true,
+                        validator: (value) =>
+                            value!.isEmpty ? "Masukkan password!" : null,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (value) => login(),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Checkbox(
+                          value: rememberEmail,
+                          activeColor: theme.colorScheme.primary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          onChanged: (value) {
+                            setState(() => rememberEmail = value!);
+                          },
+                        ),
+                        Text(
+                          "Remember Email",
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    isLoading
+                        ? const CircularProgressIndicator()
+                        : SizedBox(
+                            width: formWidth,
+                            child: ElevatedButton(
+                              onPressed: login,
+                              child: const Text("Login"),
+                            ),
+                          ),
+                    const SizedBox(height: 14),
+                    TextButton(
+                      onPressed: () {},
+                      child: const Text("Lupa Password?"),
+                    ),
+                    TextButton(
+                      onPressed: () {},
+                      child: const Text("Belum punya akun? Daftar"),
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
-
-                // Login Button
-                isLoading
-                    ? const CircularProgressIndicator()
-                    : SizedBox(
-                        width: 250,
-                        child: ElevatedButton(
-                          onPressed: login,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: const Text(
-                            "Login",
-                            style: TextStyle(fontSize: 16, color: Colors.white),
-                          ),
-                        ),
-                      ),
-
-                // Forgot Password & Register
-                TextButton(
-                  onPressed: () {},
-                  child: const Text(
-                    "Lupa Password?",
-                    style: TextStyle(color: Colors.blueAccent),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {},
-                  child: const Text(
-                    "Belum punya akun? Daftar",
-                    style: TextStyle(color: Colors.blueAccent),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

@@ -17,8 +17,6 @@ class _HomePageState extends State<HomePage> {
   late PageController _pageController;
   int _currentPage = 0;
   Timer? _slideshowTimer;
-  bool _showLeftArrow = false;
-  bool _showRightArrow = false;
   bool _isSlideshowRunning = true;
   String? _pausedLine;
   Map<String, double> _dailyTargets = {};
@@ -27,19 +25,19 @@ class _HomePageState extends State<HomePage> {
 
   // Updated time slots to match counter_table_screen.dart
   final List<String> timeSlots = [
-    "08:30", "09:30", "10:30", "11:30", "12:00",
-    "13:00", "14:00", "15:00", "16:00",
-    // Overtime slots (start at 17:25)
-    "17:25", "17:55",
+    "08:30", "09:30", "10:30", "11:30",
+    "13:30", "14:30", "15:30", "16:30",
+    // Overtime slots (start at 16:55, per jam)
+    "17:55", "18:55", "19:55",
   ];
 
   final Map<String, String> timeRangeMap = {
-    "06:30": "08:30", 
-    "06:45": "08:30", 
-    "07:00": "08:30", 
-    "07:15": "08:30", 
-    "07:30": "08:30", 
-    "07:45": "08:30", 
+    "06:30": "08:30",
+    "06:45": "08:30",
+    "07:00": "08:30",
+    "07:15": "08:30",
+    "07:30": "08:30",
+    "07:45": "08:30",
     "08:00": "08:30",
     "08:15": "08:30",
 
@@ -58,48 +56,49 @@ class _HomePageState extends State<HomePage> {
     "11:00": "11:30",
     "11:15": "11:30",
 
-    "11:30": "12:00",
-    "11:45": "12:00",
-    "12:00": "12:00",
+    "11:30": "13:30",
+    "11:45": "13:30",
+    "12:00": "13:30",
+    "12:15": "13:30",
 
-    "12:15": "13:00",
-    "12:30": "13:00",
-    "12:45": "13:00",
+    "12:30": "13:30",
+    "12:45": "13:30",
+    "13:00": "13:30",
+    "13:15": "13:30",
 
-    "13:00": "14:00",
-    "13:15": "14:00",
-    "13:30": "14:00",
-    "13:45": "14:00",
+    "13:30": "14:30",
+    "13:45": "14:30",
+    "14:00": "14:30",
+    "14:15": "14:30",
 
-    "14:00": "15:00",
-    "14:15": "15:00", 
-    "14:30": "15:00",
-    "14:45": "15:00",
+    "14:30": "15:30",
+    "14:45": "15:30",
+    "15:00": "15:30",
+    "15:15": "15:30",
 
-    "15:00": "16:00",
-    "15:15": "16:00",
-    "15:30": "16:00", 
-    "15:45": "16:00",
-    "16:00": "16:00",
+    "15:30": "16:30",
+    "15:45": "16:30",
+    "16:00": "16:30",
+    "16:15": "16:30",
+    "16:30": "16:30",
 
-    // Map post-16:00 minutes into overtime slots
-    "16:15": "17:25",
-    "16:30": "17:25",
-    "16:45": "17:25",
-    "17:00": "17:25",
-    "17:15": "17:25",
-    "17:30": "17:25",
-
+    // Map post-16:30 minutes into overtime slots (start: 16:55, per jam)
+    "16:45": "17:55",
+    "17:00": "17:55",
+    "17:15": "17:55",
+    "17:30": "17:55",
     "17:45": "17:55",
-    "18:00": "17:55",
-    "18:15": "17:55",
-    "18:30": "17:55",
-    "18:45": "17:55",
-    "19:00": "17:55",
-    "19:15": "17:55",
-    "19:30": "17:55",
-    "19:45": "17:55",
-    "20:00": "17:55",
+
+    "18:00": "18:55",
+    "18:15": "18:55",
+    "18:30": "18:55",
+    "18:45": "18:55",
+
+    "19:00": "19:55",
+    "19:15": "19:55",
+    "19:30": "19:55",
+    "19:45": "19:55",
+    "20:00": "19:55",
   };
 
   @override
@@ -126,11 +125,12 @@ class _HomePageState extends State<HomePage> {
 
   void _startSlideshowTimer() {
     _slideshowTimer?.cancel();
-    if (!_isSlideshowRunning || !_pageController.hasClients || lineData.isEmpty) return;
-    
+    if (!_isSlideshowRunning || !_pageController.hasClients || lineData.isEmpty)
+      return;
+
     _slideshowTimer = Timer.periodic(Duration(seconds: 10), (Timer timer) {
       if (!_pageController.hasClients) return;
-      
+
       if (_currentPage < lineData.length - 1) {
         _currentPage++;
       } else {
@@ -146,9 +146,9 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _refreshCurrentLineData() async {
     if (isLoading) return;
-    
+
     setState(() => isLoading = true);
-    
+
     String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
     String currentLine = _pausedLine ?? lineData.keys.elementAt(_currentPage);
     String? currentProcessName = selectedProcesses[currentLine];
@@ -156,15 +156,17 @@ class _HomePageState extends State<HomePage> {
     try {
       var newData = await fetchLineData(currentLine, formattedDate);
       await _fetchTarget(currentLine, formattedDate);
-      
+
       if (mounted && newData.isNotEmpty) {
         setState(() {
           lineData[currentLine] = newData;
-          bool processExists = newData.any((p) => p['process_name'] == currentProcessName);
-          selectedProcesses[currentLine] = processExists ? currentProcessName : newData.last['process_name'];
+          bool processExists =
+              newData.any((p) => p['process_name'] == currentProcessName);
+          selectedProcesses[currentLine] =
+              processExists ? currentProcessName : newData.last['process_name'];
           isLoading = false;
         });
-        
+
         if (!_isSlideshowRunning && _pageController.hasClients) {
           _pageController.jumpToPage(_currentPage);
         }
@@ -181,12 +183,14 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _fetchTarget(String line, String date) async {
     try {
-      final docRef = FirebaseFirestore.instance.collection('counter_sistem').doc(date);
+      final docRef =
+          FirebaseFirestore.instance.collection('counter_sistem').doc(date);
       final doc = await docRef.get();
-      
+
       if (doc.exists) {
         final data = doc.data()!;
-        final targetMap = data['target_map_$line'] as Map<String, dynamic>? ?? {};
+        final targetMap =
+            data['target_map_$line'] as Map<String, dynamic>? ?? {};
 
         // Inisialisasi hourly targets menggunakan label yang sama dengan `timeSlots`
         Map<String, double> calculatedHourlyTargets = {
@@ -203,7 +207,8 @@ class _HomePageState extends State<HomePage> {
               styles.add({
                 'key': key,
                 'quantity': (value['quantity'] as num?)?.toDouble() ?? 0.0,
-                'time_perpcs': (value['time_perpcs'] as num?)?.toDouble() ?? 0.0,
+                'time_perpcs':
+                    (value['time_perpcs'] as num?)?.toDouble() ?? 0.0,
               });
             }
           });
@@ -214,23 +219,25 @@ class _HomePageState extends State<HomePage> {
           // Hitung target per slot untuk jam kerja normal.
           // Gunakan label `timeSlots` untuk kunci, dan alokasikan total productive seconds (8 jam = 28800s)
           // secara merata ke semua normal slots (non-overtime) agar perubahan timeslot tetap sinkron.
-          // Overtime slots are now 17:25 and 17:55 only
-          List<String> overtimeTimeSlots = ['17:25', '17:55'];
-          List<String> normalTimeSlots = timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
+          // Overtime slots are now 17:55, 18:55, 19:55 (per jam)
+          List<String> overtimeTimeSlots = ['17:55', '18:55', '19:55'];
+          List<String> normalTimeSlots =
+              timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
           int currentTimeSlotIndex = 0;
 
           // Compute actual available seconds per normal slot by intersecting slot interval
-          // with productive periods (07:30-12:00 and 12:30-16:00). This ensures slots
+          // with productive periods (07:30-11:30 and 13:30-17:30). This ensures slots
           // that are 30-min are handled correctly and allocation by time_perpcs is accurate.
           DateTime parseTime(String t) {
             final parts = t.split(':');
-            return DateTime(2000, 1, 1, int.parse(parts[0]), int.parse(parts[1]));
+            return DateTime(
+                2000, 1, 1, int.parse(parts[0]), int.parse(parts[1]));
           }
 
           DateTime morningStart = DateTime(2000, 1, 1, 7, 30);
-          DateTime morningEnd = DateTime(2000, 1, 1, 12, 0);
+          DateTime morningEnd = DateTime(2000, 1, 1, 11, 30);
           DateTime afternoonStart = DateTime(2000, 1, 1, 12, 30);
-          DateTime afternoonEnd = DateTime(2000, 1, 1, 16, 1);
+          DateTime afternoonEnd = DateTime(2000, 1, 1, 16, 31);
 
           final Map<String, double> slotRemainingSeconds = {};
           for (int idx = 0; idx < normalTimeSlots.length; idx++) {
@@ -245,16 +252,20 @@ class _HomePageState extends State<HomePage> {
 
             double avail = 0.0;
             // overlap with morning
-            final overlapStart1 = start.isAfter(morningStart) ? start : morningStart;
+            final overlapStart1 =
+                start.isAfter(morningStart) ? start : morningStart;
             final overlapEnd1 = end.isBefore(morningEnd) ? end : morningEnd;
             if (overlapEnd1.isAfter(overlapStart1)) {
-              avail += overlapEnd1.difference(overlapStart1).inSeconds.toDouble();
+              avail +=
+                  overlapEnd1.difference(overlapStart1).inSeconds.toDouble();
             }
             // overlap with afternoon
-            final overlapStart2 = start.isAfter(afternoonStart) ? start : afternoonStart;
+            final overlapStart2 =
+                start.isAfter(afternoonStart) ? start : afternoonStart;
             final overlapEnd2 = end.isBefore(afternoonEnd) ? end : afternoonEnd;
             if (overlapEnd2.isAfter(overlapStart2)) {
-              avail += overlapEnd2.difference(overlapStart2).inSeconds.toDouble();
+              avail +=
+                  overlapEnd2.difference(overlapStart2).inSeconds.toDouble();
             }
 
             slotRemainingSeconds[endLabel] = avail;
@@ -266,7 +277,8 @@ class _HomePageState extends State<HomePage> {
 
             if (timePerPcs <= 0) continue;
 
-            while (remainingQuantity > 0 && currentTimeSlotIndex < normalTimeSlots.length) {
+            while (remainingQuantity > 0 &&
+                currentTimeSlotIndex < normalTimeSlots.length) {
               final currentTimeSlot = normalTimeSlots[currentTimeSlotIndex];
               double slotSec = slotRemainingSeconds[currentTimeSlot] ?? 3600.0;
 
@@ -281,9 +293,12 @@ class _HomePageState extends State<HomePage> {
                 continue;
               }
 
-              final allocated = possiblePieces >= remainingQuantity ? remainingQuantity : possiblePieces;
+              final allocated = possiblePieces >= remainingQuantity
+                  ? remainingQuantity
+                  : possiblePieces;
 
-              calculatedHourlyTargets[currentTimeSlot] = (calculatedHourlyTargets[currentTimeSlot] ?? 0.0) + allocated;
+              calculatedHourlyTargets[currentTimeSlot] =
+                  (calculatedHourlyTargets[currentTimeSlot] ?? 0.0) + allocated;
               remainingQuantity -= allocated;
               totalDailyTarget += allocated;
 
@@ -293,7 +308,8 @@ class _HomePageState extends State<HomePage> {
               if (slotSec <= 1e-9) currentTimeSlotIndex++;
             }
 
-            if (remainingQuantity > 0 && currentTimeSlotIndex >= normalTimeSlots.length) {
+            if (remainingQuantity > 0 &&
+                currentTimeSlotIndex >= normalTimeSlots.length) {
               break;
             }
           }
@@ -301,24 +317,38 @@ class _HomePageState extends State<HomePage> {
           // Hitung overtime (sama: gunakan sisa detik per slot overtime)
           if (targetMap.containsKey('overtime')) {
             final overtimeData = targetMap['overtime'] as Map<String, dynamic>;
-            double overtimeQuantity = (overtimeData['quantity'] as num?)?.toDouble() ?? 0.0;
-            double overtimeTimePerPcs = (overtimeData['time_perpcs'] as num?)?.toDouble() ?? 0.0;
+            double overtimeQuantity =
+                (overtimeData['quantity'] as num?)?.toDouble() ?? 0.0;
+            double overtimeTimePerPcs =
+                (overtimeData['time_perpcs'] as num?)?.toDouble() ?? 0.0;
 
             if (overtimeTimePerPcs > 0 && overtimeQuantity > 0) {
-              List<String> overtimeTimeSlots = ['16:25', '16:55', '17:25', '17:55'];
+              List<String> overtimeTimeSlots = ['17:55', '18:55', '19:55'];
               double remainingOvertime = overtimeQuantity;
-              final Map<String, double> overtimeSlotSec = { for (var s in overtimeTimeSlots) s: 1800.0 };
+              final Map<String, double> overtimeSlotSec = {
+                for (var s in overtimeTimeSlots) s: 1800.0
+              };
               int otIndex = 0;
-              while (remainingOvertime > 0 && otIndex < overtimeTimeSlots.length) {
+              while (
+                  remainingOvertime > 0 && otIndex < overtimeTimeSlots.length) {
                 final slot = overtimeTimeSlots[otIndex];
                 double slotSec = overtimeSlotSec[slot] ?? 3600.0;
-                if (slotSec <= 1e-9) { otIndex++; continue; }
+                if (slotSec <= 1e-9) {
+                  otIndex++;
+                  continue;
+                }
 
                 final possiblePieces = slotSec / overtimeTimePerPcs;
-                if (possiblePieces <= 1e-9) { otIndex++; continue; }
+                if (possiblePieces <= 1e-9) {
+                  otIndex++;
+                  continue;
+                }
 
-                final allocated = possiblePieces >= remainingOvertime ? remainingOvertime : possiblePieces;
-                calculatedHourlyTargets[slot] = (calculatedHourlyTargets[slot] ?? 0.0) + allocated;
+                final allocated = possiblePieces >= remainingOvertime
+                    ? remainingOvertime
+                    : possiblePieces;
+                calculatedHourlyTargets[slot] =
+                    (calculatedHourlyTargets[slot] ?? 0.0) + allocated;
                 remainingOvertime -= allocated;
                 totalDailyTarget += allocated;
 
@@ -335,10 +365,16 @@ class _HomePageState extends State<HomePage> {
           if (target is num) {
             totalDailyTarget = target.toDouble();
             // Distribusikan total daily target ke normal slots (non-overtime)
-            List<String> overtimeTimeSlots = ['16:25', '16:55', '17:25', '17:55'];
-            final normalSlots = timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
-            final perSlot = normalSlots.isNotEmpty ? totalDailyTarget / normalSlots.length : 0.0;
-            calculatedHourlyTargets = { for (var s in timeSlots) s: (normalSlots.contains(s) ? perSlot : 0.0) };
+            List<String> overtimeTimeSlots = ['17:55', '18:55', '19:55'];
+            final normalSlots =
+                timeSlots.where((s) => !overtimeTimeSlots.contains(s)).toList();
+            final perSlot = normalSlots.isNotEmpty
+                ? totalDailyTarget / normalSlots.length
+                : 0.0;
+            calculatedHourlyTargets = {
+              for (var s in timeSlots)
+                s: (normalSlots.contains(s) ? perSlot : 0.0)
+            };
           }
         }
 
@@ -371,7 +407,7 @@ class _HomePageState extends State<HomePage> {
     if (picked != null && picked != selectedDate) {
       _streamSubscriptions.forEach((_, subscription) => subscription.cancel());
       _streamSubscriptions.clear();
-      
+
       setState(() {
         selectedDate = picked;
         _pausedLine = null;
@@ -389,7 +425,7 @@ class _HomePageState extends State<HomePage> {
         _pausedLine = null;
       }
     });
-    
+
     if (_isSlideshowRunning) {
       _startSlideshowTimer();
     } else {
@@ -397,41 +433,9 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _goToPreviousPage() {
-    if (!_pageController.hasClients) return;
-    
-    if (_currentPage > 0) {
-      _currentPage--;
-    } else {
-      _currentPage = lineData.length - 1;
-    }
-    _pageController.animateToPage(
-      _currentPage,
-      duration: Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-    _resetTimer();
-  }
-
-  void _goToNextPage() {
-    if (!_pageController.hasClients) return;
-    
-    if (_currentPage < lineData.length - 1) {
-      _currentPage++;
-    } else {
-      _currentPage = 0;
-    }
-    _pageController.animateToPage(
-      _currentPage,
-      duration: Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-    _resetTimer();
-  }
-
   void _goToPage(int page) {
     if (!_pageController.hasClients) return;
-    
+
     _currentPage = page;
     _pageController.animateToPage(
       _currentPage,
@@ -450,7 +454,8 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchLineData(String line, String date) async {
+  Future<List<Map<String, dynamic>>> fetchLineData(
+      String line, String date) async {
     try {
       // The database structure now stores dynamic contract collections under the
       // 'Kumitate' document (field 'Kontrak' contains the list of collection names).
@@ -473,7 +478,9 @@ class _HomePageState extends State<HomePage> {
           : <dynamic>[];
 
       // If no kontrak list found, keep compatibility with older structure using 'Process'
-      final contractCollections = kontrakArray.isEmpty ? ['Process'] : kontrakArray.map((e) => e.toString()).toList();
+      final contractCollections = kontrakArray.isEmpty
+          ? ['Process']
+          : kontrakArray.map((e) => e.toString()).toList();
 
       List<Map<String, dynamic>> processList = [];
 
@@ -500,7 +507,12 @@ class _HomePageState extends State<HomePage> {
 
           // Process each time entry in the document
           processData.forEach((key, value) {
-            if (key != 'sequence' && key != 'belumKensa' && key != 'stock_20min' && key != 'stock_pagi' && key != 'part' && value is Map<String, dynamic>) {
+            if (key != 'sequence' &&
+                key != 'belumKensa' &&
+                key != 'stock_20min' &&
+                key != 'stock_pagi' &&
+                key != 'part' &&
+                value is Map<String, dynamic>) {
               final mappedTime = timeRangeMap[key];
               if (mappedTime != null) {
                 int slotTotal = 0;
@@ -512,7 +524,8 @@ class _HomePageState extends State<HomePage> {
                       : int.tryParse(countValue.toString()) ?? 0;
                   slotTotal += count;
                 }
-                cumulativeData[mappedTime] = (cumulativeData[mappedTime] ?? 0) + slotTotal;
+                cumulativeData[mappedTime] =
+                    (cumulativeData[mappedTime] ?? 0) + slotTotal;
               }
             }
           });
@@ -531,7 +544,8 @@ class _HomePageState extends State<HomePage> {
       }
 
       // Sort by sequence number
-      processList.sort((a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
+      processList.sort(
+          (a, b) => (a['sequence'] as int).compareTo(b['sequence'] as int));
       return processList;
     } catch (e) {
       print('Error fetching counter data: $e');
@@ -558,7 +572,9 @@ class _HomePageState extends State<HomePage> {
         final kontrakArray = (data != null && data['Kontrak'] is List)
             ? List<dynamic>.from(data['Kontrak'])
             : <dynamic>[];
-        final contractCollections = kontrakArray.isEmpty ? ['Process'] : kontrakArray.map((e) => e.toString()).toList();
+        final contractCollections = kontrakArray.isEmpty
+            ? ['Process']
+            : kontrakArray.map((e) => e.toString()).toList();
 
         for (final contractName in contractCollections) {
           final stream = kumitateDocRef.collection(contractName).snapshots();
@@ -573,7 +589,8 @@ class _HomePageState extends State<HomePage> {
                 });
               }
             } catch (e) {
-              print('Error updating data from stream for $line/$contractName: $e');
+              print(
+                  'Error updating data from stream for $line/$contractName: $e');
             }
           });
         }
@@ -585,14 +602,17 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> loadData() async {
     setState(() => isLoading = true);
-    
+
     String formattedDate = DateFormat("yyyy-MM-dd").format(selectedDate);
     Map<String, List<Map<String, dynamic>>> newData = {};
     Map<String, String?> newSelectedProcesses = {};
 
-    final currentLineBeforeRefresh = _pausedLine ?? (_currentPage < lineData.length ? lineData.keys.elementAt(_currentPage) : null);
+    final currentLineBeforeRefresh = _pausedLine ??
+        (_currentPage < lineData.length
+            ? lineData.keys.elementAt(_currentPage)
+            : null);
     final currentPageBeforeRefresh = _currentPage;
-    
+
     for (String line in ['A', 'B', 'C', 'D', 'E']) {
       var data = await fetchLineData(line, formattedDate);
       await _fetchTarget(line, formattedDate);
@@ -603,10 +623,10 @@ class _HomePageState extends State<HomePage> {
         if (!selectedProcesses.containsKey(line)) {
           newSelectedProcesses[line] = lastName;
         } else {
-          bool processExists = data.any((p) => p['process_name'] == selectedProcesses[line]);
-          newSelectedProcesses[line] = processExists
-              ? selectedProcesses[line]
-              : lastName;
+          bool processExists =
+              data.any((p) => p['process_name'] == selectedProcesses[line]);
+          newSelectedProcesses[line] =
+              processExists ? selectedProcesses[line] : lastName;
         }
       } else {
         print("No data or invalid format for Line $line");
@@ -620,18 +640,18 @@ class _HomePageState extends State<HomePage> {
         lineData = newData;
         selectedProcesses = newSelectedProcesses;
         isLoading = false;
-        
+
         if (lineData.isNotEmpty) {
-          if (currentLineBeforeRefresh != null && lineData.containsKey(currentLineBeforeRefresh)) {
-            _currentPage = lineData.keys.toList().indexOf(currentLineBeforeRefresh);
-          } 
-          else if (currentPageBeforeRefresh < lineData.length) {
+          if (currentLineBeforeRefresh != null &&
+              lineData.containsKey(currentLineBeforeRefresh)) {
+            _currentPage =
+                lineData.keys.toList().indexOf(currentLineBeforeRefresh);
+          } else if (currentPageBeforeRefresh < lineData.length) {
             _currentPage = currentPageBeforeRefresh;
-          } 
-          else {
+          } else {
             _currentPage = 0;
           }
-          
+
           if (!_isSlideshowRunning) {
             _pausedLine = lineData.keys.elementAt(_currentPage);
           }
@@ -664,9 +684,10 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    final displayValue = (currentProcess != null && names.contains(currentProcess))
-        ? currentProcess
-        : (names.isNotEmpty ? names.last : null);
+    final displayValue =
+        (currentProcess != null && names.contains(currentProcess))
+            ? currentProcess
+            : (names.isNotEmpty ? names.last : null);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -745,14 +766,17 @@ class _HomePageState extends State<HomePage> {
                   color: Colors.blue.shade700,
                 ),
                 onPressed: _toggleSlideshow,
-                tooltip: _isSlideshowRunning ? 'Pause Slideshow' : 'Resume Slideshow',
+                tooltip: _isSlideshowRunning
+                    ? 'Pause Slideshow'
+                    : 'Resume Slideshow',
               ),
               SizedBox(width: 8),
               TextButton(
                 onPressed: () => _selectDate(context),
                 child: Row(
                   children: [
-                    Icon(Icons.calendar_today, size: 16, color: Colors.blue.shade700),
+                    Icon(Icons.calendar_today,
+                        size: 16, color: Colors.blue.shade700),
                     SizedBox(width: 4),
                     Text(
                       DateFormat('yyyy-MM-dd').format(selectedDate),
@@ -776,9 +800,7 @@ class _HomePageState extends State<HomePage> {
     String? currentProcessName = selectedProcesses[line];
 
     // Aggregate data for the selected process name across all contracts
-    // slotTotals holds total (non-cumulative) per time slot
-    final Map<String, int> slotTotals = { for (var t in timeSlots) t: 0 };
-    // rawDataAggregated maps originalTimeKey -> aggregated machine map { '1': sum, '2': sum, ... }
+    final Map<String, int> slotTotals = {for (var t in timeSlots) t: 0};
     final Map<String, Map<String, int>> rawDataAggregated = {};
 
     for (var p in processes) {
@@ -786,7 +808,11 @@ class _HomePageState extends State<HomePage> {
       final raw = p['raw_data'] as Map<String, dynamic>? ?? {};
 
       raw.forEach((key, value) {
-        if (key == 'sequence' || key == 'belumKensa' || key == 'stock_20min' || key == 'stock_pagi' || key == 'part') return;
+        if (key == 'sequence' ||
+            key == 'belumKensa' ||
+            key == 'stock_20min' ||
+            key == 'stock_pagi' ||
+            key == 'part') return;
         if (value is! Map<String, dynamic>) return;
         final mapped = timeRangeMap[key];
         if (mapped == null) return;
@@ -794,61 +820,112 @@ class _HomePageState extends State<HomePage> {
         int slotSum = 0;
         for (int i = 1; i <= 5; i++) {
           final cnt = value['$i'];
-          final int c = cnt is num ? cnt.toInt() : int.tryParse(cnt.toString()) ?? 0;
+          final int c =
+              cnt is num ? cnt.toInt() : int.tryParse(cnt.toString()) ?? 0;
           slotSum += c;
 
           rawDataAggregated.putIfAbsent(key, () => {});
-          rawDataAggregated[key]![ '$i' ] = (rawDataAggregated[key]![ '$i' ] ?? 0) + c;
+          rawDataAggregated[key]!['$i'] =
+              (rawDataAggregated[key]!['$i'] ?? 0) + c;
         }
 
         slotTotals[mapped] = (slotTotals[mapped] ?? 0) + slotSum;
       });
     }
 
-    // Build cumulative data from slotTotals
-    Map<String, int> cumulative = {};
+    // Build cumulative and hourly data
+    Map<String, int> cumulativeActual = {};
+    Map<String, double> hourlyTargets = _hourlyTargets[line] ?? {};
+
     int running = 0;
     for (var t in timeSlots) {
       running += (slotTotals[t] ?? 0);
-      cumulative[t] = running;
+      cumulativeActual[t] = running;
     }
 
-    double? dailyTarget = _dailyTargets[line];
-    Map<String, double>? hourlyTargets = _hourlyTargets[line];
-
-    List<FlSpot> spots = [];
-    List<FlSpot> targetSpots = [];
-    double maxY = 0;
-
-    // Add initial spot at 0
-    spots.add(FlSpot(0, 0));
-    if (dailyTarget != null) {
-      targetSpots.add(FlSpot(0, 0));
+    // Calculate cumulative target
+    Map<String, double> cumulativeTarget = {};
+    double cumTarget = 0.0;
+    for (var t in timeSlots) {
+      cumTarget += (hourlyTargets[t] ?? 0.0);
+      cumulativeTarget[t] = cumTarget;
     }
 
-    // Calculate cumulative target for each time slot
-    double cumulativeTarget = 0.0;
-    
-    if (dailyTarget != null && hourlyTargets != null) {
-      // Add spots for target line
-      for (int i = 0; i < timeSlots.length; i++) {
-        String time = timeSlots[i];
-        cumulativeTarget += (hourlyTargets[time] ?? 0.0);
-        targetSpots.add(FlSpot((i+1).toDouble(), cumulativeTarget));
-      }
+    // Calculate hourly actual (non-cumulative)
+    Map<String, int> hourlyActual = {
+      for (var t in timeSlots) t: slotTotals[t] ?? 0
+    };
+
+    // Calculate target per bar (non-cumulative)
+    Map<String, double> targetPerHour = {};
+    double prevCumTargetRounded = 0.0;
+    for (var slot in timeSlots) {
+      final cumTargetRounded = (cumulativeTarget[slot] ?? 0.0).round();
+      targetPerHour[slot] =
+          (cumTargetRounded - prevCumTargetRounded).toDouble();
+      prevCumTargetRounded = cumTargetRounded.toDouble();
     }
 
-    // Add spots for each time slot (use cumulative values)
-    for (int i = 0; i < timeSlots.length; i++) {
-      String time = timeSlots[i];
-      int value = cumulative[time] ?? 0;
-      spots.add(FlSpot((i+1).toDouble(), value.toDouble()));
-      
-      if (value > maxY) maxY = value.toDouble();
-      if (dailyTarget != null && cumulativeTarget > maxY) maxY = cumulativeTarget;
-    }
+    // Calculate max values for charts
+    final double barMax = [
+      hourlyActual.values
+          .fold<double>(0.0, (prev, v) => v > prev ? v.toDouble() : prev),
+      targetPerHour.values.fold<double>(0.0, (prev, v) => v > prev ? v : prev),
+    ].fold<double>(0.0, (prev, v) => v > prev ? v : prev);
 
-    if (maxY == 0) maxY = 10;
+    final double cumulativeTargetMax = cumulativeTarget.values
+        .fold<double>(0.0, (prev, v) => v > prev ? v : prev);
+    final double cumulativeActualMax = cumulativeActual.values
+        .fold<double>(0.0, (prev, v) => v > prev ? v.toDouble() : prev);
+    final double lineChartMax = (cumulativeTargetMax > cumulativeActualMax
+            ? cumulativeTargetMax
+            : cumulativeActualMax)
+        .clamp(10.0, double.infinity);
+
+    final double chartMax = (barMax * 1.2).clamp(10.0, double.infinity);
+    const double barWidth = 26.0;
+    const double barsSpace = 4.5;
+    const double labelFontSize = 13.0;
+
+    // Build bar groups
+    final barGroups = timeSlots.asMap().entries.map((e) {
+      final slot = e.value;
+      return BarChartGroupData(
+        x: e.key + 1,
+        barsSpace: barsSpace,
+        barRods: [
+          BarChartRodData(
+            toY: targetPerHour[slot] ?? 0.0,
+            color: Colors.red,
+            width: barWidth,
+            borderRadius: BorderRadius.circular(2),
+          ),
+          BarChartRodData(
+            toY: hourlyActual[slot]?.toDouble() ?? 0.0,
+            color: Colors.blue,
+            width: barWidth,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ],
+      );
+    }).toList();
+
+    // Build line chart spots
+    final lineSpots = [
+      FlSpot(-0.5, 0),
+      ...timeSlots.asMap().entries.map((entry) {
+        return FlSpot(entry.key.toDouble(),
+            cumulativeActual[entry.value]?.toDouble() ?? 0.0);
+      }),
+    ];
+
+    final targetLineSpots = [
+      FlSpot(-0.5, 0),
+      ...timeSlots.asMap().entries.map((entry) {
+        return FlSpot(
+            entry.key.toDouble(), cumulativeTarget[entry.value] ?? 0.0);
+      }),
+    ];
 
     return Card(
       elevation: 4,
@@ -860,240 +937,385 @@ class _HomePageState extends State<HomePage> {
           SizedBox(height: 8),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 24.0, left: 24.0, right: 24.0),
-              child: MouseRegion(
-                onEnter: (_) => setState(() {
-                  _showLeftArrow = true;
-                  _showRightArrow = true;
-                }),
-                onExit: (_) => setState(() {
-                  _showLeftArrow = false;
-                  _showRightArrow = false;
-                }),
-                child: Stack(
-                  children: [
-                    LineChart(
-                      LineChartData(
-                        lineTouchData: LineTouchData(
-                          enabled: true,
-                          touchTooltipData: LineTouchTooltipData(
-                            tooltipPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                            tooltipRoundedRadius: 6,
-                            getTooltipItems: (List<LineBarSpot> touchedSpots) {
-                              // Build a tooltip text for each distinct x, then return
-                              // one LineTooltipItem per touched spot (mapping to its x's text).
-                              final Map<double, String> tooltipByX = {};
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Legend
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      _buildLegendDot(Colors.blue, 'Aktual per jam'),
+                      const SizedBox(width: 8),
+                      _buildLegendDot(Colors.red, 'Target per jam'),
+                      const SizedBox(width: 8),
+                      _buildLegendDot(Colors.black, 'Aktual Akumulatif',
+                          isLine: true),
+                      const SizedBox(width: 8),
+                      _buildLegendDot(Colors.black, 'Target Akumulatif',
+                          isLine: true, isDashed: true),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: LayoutBuilder(builder: (context, constraints) {
+                      final totalWidth = constraints.maxWidth;
+                      final totalHeight = constraints.maxHeight;
+                      const double leftTitleWidth = 36.0;
+                      const double rightTitleWidth = 40.0;
+                      const double bottomTitleHeight = 36.0;
+                      const double topPadding = 28.0;
+                      final double chartAreaWidth =
+                          totalWidth - leftTitleWidth - rightTitleWidth;
+                      final double chartAreaHeight =
+                          totalHeight - bottomTitleHeight - topPadding;
+                      final int n = timeSlots.length;
+                      final double slotWidth = chartAreaWidth / n;
 
-                              // Prepare grouped data per x
-                              final Map<double, List<LineBarSpot>> groups = {};
-                              for (final spot in touchedSpots) {
-                                groups.putIfAbsent(spot.x, () => []).add(spot);
-                              }
+                      return Stack(children: [
+                        // BarChart
+                        Positioned(
+                          top: topPadding,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: BarChart(BarChartData(
+                            alignment: BarChartAlignment.spaceAround,
+                            maxY: chartMax,
+                            barGroups: barGroups,
+                            gridData: FlGridData(
+                              show: true,
+                              drawHorizontalLine: true,
+                              horizontalInterval: chartMax / 5,
+                              getDrawingHorizontalLine: (_) =>
+                                  FlLine(color: Colors.white12, strokeWidth: 1),
+                            ),
+                            titlesData: FlTitlesData(
+                              bottomTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  interval: 1,
+                                  reservedSize: bottomTitleHeight,
+                                  getTitlesWidget: (value, _) {
+                                    final idx = value.toInt() - 1;
+                                    if (idx < 0 || idx >= timeSlots.length)
+                                      return const SizedBox();
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 4.0),
+                                      child: SizedBox(
+                                        width: slotWidth,
+                                        child: Text(
+                                          timeSlots[idx],
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                              color: Colors.blue.shade700,
+                                              fontSize: 13),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              leftTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: leftTitleWidth,
+                                  interval: chartMax / 5,
+                                  getTitlesWidget: (value, _) => Text(
+                                    value.toInt().toString(),
+                                    style: TextStyle(
+                                        color: Colors.blue.shade700,
+                                        fontSize: 13),
+                                  ),
+                                ),
+                              ),
+                              rightTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: rightTitleWidth,
+                                  interval: chartMax / 5,
+                                  getTitlesWidget: (value, _) {
+                                    final cv =
+                                        ((value / chartMax) * lineChartMax)
+                                            .round();
+                                    return Text(cv.toString(),
+                                        style: TextStyle(
+                                            color: Colors.blue.shade700,
+                                            fontSize: 13));
+                                  },
+                                ),
+                              ),
+                              topTitles: AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false)),
+                            ),
+                            borderData: FlBorderData(show: false),
+                            barTouchData: BarTouchData(enabled: false),
+                          )),
+                        ),
 
-                              groups.forEach((x, spotsAtX) {
-                                final timeIndex = x.toInt() - 1;
-                                final timeSlot = timeIndex >= 0 && timeIndex < timeSlots.length
-                                    ? timeSlots[timeIndex]
-                                    : 'Start';
-
-                                // We only want to show: Time, Target (if any), and a single
-                                // Total line. Do not show per-machine ('Mesin') lines.
-                                String tooltipText = '$timeSlot\n';
-
-                                // Add Target line(s) first
-                                for (final spot in spotsAtX) {
-                                  final isTarget = spot.barIndex == 1;
-                                  if (isTarget) {
-                                    tooltipText += 'Target: ${spot.y.toInt()}\n';
-                                  }
-                                }
-
-                                // Compute a single Total value: take the maximum y among
-                                // non-target spots (if none, show 0)
-                                int totalVal = 0;
-                                for (final spot in spotsAtX) {
-                                  final isTarget = spot.barIndex == 1;
-                                  if (!isTarget) {
-                                    final int val = spot.y.toInt();
-                                    if (val > totalVal) totalVal = val;
-                                  }
-                                }
-                                tooltipText += 'Total: $totalVal\n';
-
-                                tooltipByX[x] = tooltipText.trim();
-                              });
-
-                              // Map back to touchedSpots so the returned list length matches
-                              // touchedSpots (this is expected by fl_chart). Only the
-                              // first spot for a given x will contain the tooltip text;
-                              // subsequent spots at the same x return an invisible item
-                              // to avoid duplicate blocks.
-                              final seenX = <double>{};
-                              return touchedSpots.map((spot) {
-                                final isFirstForX = !seenX.contains(spot.x);
-                                if (isFirstForX) seenX.add(spot.x);
-
-                                if (isFirstForX) {
-                                  final text = tooltipByX[spot.x] ?? '';
-                                  return LineTooltipItem(
-                                    text,
-                                    TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  );
-                                } else {
-                                  // Return a zero-height transparent item so it doesn't
-                                  // increase the tooltip card height.
-                                  return LineTooltipItem(
-                                    '',
-                                    TextStyle(
-                                      color: Colors.transparent,
-                                      fontSize: 0,
-                                      height: 0,
-                                    ),
-                                  );
-                                }
-                              }).toList();
-                            },
+                        // Line overlay
+                        Positioned(
+                          top: topPadding,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: LineChart(
+                            LineChartData(
+                              minX: -0.5,
+                              maxX: (timeSlots.length - 1).toDouble() + 0.5,
+                              minY: -(lineChartMax * 0.06),
+                              maxY: lineChartMax,
+                              lineBarsData: [
+                                LineChartBarData(
+                                  spots: lineSpots,
+                                  isCurved: false,
+                                  barWidth: 2,
+                                  color: Colors.black,
+                                  dotData: FlDotData(show: true),
+                                ),
+                                LineChartBarData(
+                                  spots: targetLineSpots,
+                                  isCurved: false,
+                                  barWidth: 2,
+                                  color: Colors.black,
+                                  dotData: FlDotData(show: false),
+                                  dashArray: [5, 5],
+                                ),
+                              ],
+                              gridData: FlGridData(show: false),
+                              borderData: FlBorderData(show: false),
+                              titlesData: FlTitlesData(show: false),
+                              lineTouchData: LineTouchData(enabled: false),
+                            ),
                           ),
                         ),
-                        gridData: FlGridData(
-                          show: true,
-                          drawVerticalLine: true,
-                          horizontalInterval: maxY > 10 ? (maxY / 5) : 2,
-                          verticalInterval: 1,
-                        ),
-                        titlesData: FlTitlesData(
-                          bottomTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              getTitlesWidget: (value, _) {
-                                if (value != value.toInt()) return SizedBox();
-                                if (value.toInt() < 1 || value.toInt() > timeSlots.length) return SizedBox();
-                                String timeLabel = timeSlots[value.toInt() - 1];
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 8.0),
-                                  child: Text(
-                                    timeLabel,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.blue.shade700,
-                                      fontWeight: FontWeight.bold,
+
+                        // Labels per slot
+                        ...(timeSlots.asMap().entries.expand((entry) {
+                          final index = entry.key;
+                          final slot = entry.value;
+                          final actualValue =
+                              hourlyActual[slot]?.toDouble() ?? 0.0;
+                          final targetValue = targetPerHour[slot] ?? 0.0;
+                          final double rawCumulativeValue =
+                              cumulativeActual[slot]?.toDouble() ?? 0.0;
+                          final double rawCumulativeTargetValue =
+                              cumulativeTarget[slot] ?? 0.0;
+
+                          final double groupCenterX = n > 0
+                              ? leftTitleWidth +
+                                  ((2 * index + 1) / (2 * n)) * chartAreaWidth
+                              : leftTitleWidth + chartAreaWidth / 2;
+
+                          final double targetBarCenterX =
+                              groupCenterX - barsSpace / 2 - barWidth / 2;
+                          final double actualBarCenterX =
+                              groupCenterX + barsSpace / 2 + barWidth / 2;
+
+                          final double targetBarPx =
+                              (targetValue / chartMax) * chartAreaHeight;
+                          final double actualBarPx =
+                              (actualValue / chartMax) * chartAreaHeight;
+
+                          final double targetBarTop =
+                              topPadding + chartAreaHeight - targetBarPx;
+                          final double actualBarTop =
+                              topPadding + chartAreaHeight - actualBarPx;
+
+                          final double targetLabelTop =
+                              targetBarTop + targetBarPx - labelFontSize - 3;
+                          final double actualLabelTop =
+                              actualBarTop + actualBarPx - labelFontSize - 3;
+
+                          final double actualLabelTopClamped = actualLabelTop
+                              .clamp(actualBarTop, totalHeight - 20.0);
+
+                          const double selisihLabelHeight =
+                              labelFontSize - 2 + 3;
+                          double selisihTop =
+                              actualLabelTopClamped - selisihLabelHeight - 1.0;
+                          if (selisihTop < topPadding) selisihTop = topPadding;
+                          final double selisihBottom =
+                              selisihTop + selisihLabelHeight;
+
+                          const double cumulativeLabelCardHeight =
+                              labelFontSize * 3 + 12;
+                          final double lineMinY = -(lineChartMax * 0.06);
+                          final double lineRangeY = lineChartMax - lineMinY;
+
+                          final double targetLinePx = topPadding +
+                              chartAreaHeight *
+                                  (1.0 -
+                                      (rawCumulativeTargetValue - lineMinY) /
+                                          lineRangeY);
+                          final double actualLinePx = topPadding +
+                              chartAreaHeight *
+                                  (1.0 -
+                                      (rawCumulativeValue - lineMinY) /
+                                          lineRangeY);
+
+                          final double highestLinePx =
+                              targetLinePx < actualLinePx
+                                  ? targetLinePx
+                                  : actualLinePx;
+
+                          double cumulativeLabelTop =
+                              highestLinePx - cumulativeLabelCardHeight - 6;
+                          cumulativeLabelTop = cumulativeLabelTop.clamp(
+                              0.0, totalHeight - cumulativeLabelCardHeight);
+
+                          final double cardBottom =
+                              cumulativeLabelTop + cumulativeLabelCardHeight;
+                          if (cumulativeLabelTop < selisihBottom &&
+                              cardBottom > selisihTop) {
+                            final double candidateTop =
+                                selisihTop - cumulativeLabelCardHeight - 4;
+                            if (candidateTop >= 0) {
+                              cumulativeLabelTop = candidateTop;
+                            } else {
+                              final double belowCandidate = highestLinePx + 4;
+                              final double maxTop =
+                                  totalHeight - cumulativeLabelCardHeight;
+                              cumulativeLabelTop =
+                                  belowCandidate.clamp(0.0, maxTop);
+                            }
+                          }
+
+                          return [
+                            // Label TARGET
+                            if (targetValue > 0)
+                              Positioned(
+                                left: targetBarCenterX - barWidth / 2,
+                                top: targetLabelTop.clamp(
+                                    targetBarTop, totalHeight - 20.0),
+                                width: barWidth,
+                                child: Text(
+                                  targetValue.round().toString(),
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: labelFontSize,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+
+                            // Label ACTUAL
+                            if (actualValue > 0)
+                              Positioned(
+                                left: actualBarCenterX - barWidth / 2,
+                                top: actualLabelTop.clamp(
+                                    actualBarTop, totalHeight - 20.0),
+                                width: barWidth,
+                                child: Text(
+                                  actualValue.toInt().toString(),
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: labelFontSize,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+
+                            // Label SELISIH
+                            if (actualValue > 0 || targetValue > 0)
+                              Positioned(
+                                left: actualBarCenterX - barWidth / 2 - 3,
+                                top: selisihTop,
+                                width: barWidth + 6,
+                                child: Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 2, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: (actualValue.toInt() -
+                                                  targetValue.round()) >=
+                                              0
+                                          ? Colors.green.withOpacity(0.85)
+                                          : Colors.red.withOpacity(0.85),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      () {
+                                        final diff = actualValue.toInt() -
+                                            targetValue.round();
+                                        return diff >= 0 ? '+$diff' : '$diff';
+                                      }(),
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: labelFontSize - 2,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
-                                );
-                              },
-                              interval: 1,
-                              reservedSize: 30,
-                            ),
-                          ),
-                          leftTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              reservedSize: 40,
-                              interval: maxY > 10 ? (maxY / 5) : 2,
-                              getTitlesWidget: (value, _) => Text(
-                                value.toInt().toString(),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.blue.shade700,
+                                ),
+                              ),
+
+                            // Card AKUMULATIF
+                            Positioned(
+                              left: groupCenterX - 28,
+                              top: cumulativeLabelTop,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5.0, vertical: 2.0),
+                                decoration: BoxDecoration(
+                                  color: Colors.yellow.withOpacity(0.85),
+                                  borderRadius: BorderRadius.circular(5.0),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'T:${rawCumulativeTargetValue.round()}',
+                                      style: const TextStyle(
+                                        color: Colors.black,
+                                        fontSize: labelFontSize - 1,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      'A:${(cumulativeActual[slot] ?? 0)}',
+                                      style: const TextStyle(
+                                        color: Colors.black,
+                                        fontSize: labelFontSize - 1,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      () {
+                                        final diff = (cumulativeActual[slot] ??
+                                                0) -
+                                            rawCumulativeTargetValue.round();
+                                        return 'S:${diff >= 0 ? '+$diff' : '$diff'}';
+                                      }(),
+                                      style: TextStyle(
+                                        color: (() {
+                                          final diff =
+                                              (cumulativeActual[slot] ?? 0) -
+                                                  rawCumulativeTargetValue
+                                                      .round();
+                                          return diff >= 0
+                                              ? const Color(0xFF00A000)
+                                              : const Color(0xFFCC0000);
+                                        })(),
+                                        fontSize: labelFontSize - 1,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                          ),
-                          rightTitles: AxisTitles(
-                            sideTitles: SideTitles(showTitles: false),
-                          ),
-                          topTitles: AxisTitles(
-                            sideTitles: SideTitles(showTitles: false),
-                          ),
-                        ),
-                        borderData: FlBorderData(
-                          show: true,
-                          border: Border.all(
-                            color: Colors.blue.shade200,
-                            width: 1,
-                          ),
-                        ),
-                        minX: 0,
-                        maxX: timeSlots.length.toDouble(),
-                        minY: 0,
-                        maxY: maxY * 1.1,
-                        lineBarsData: [
-                          LineChartBarData(
-                            spots: spots,
-                            isCurved: false,
-                            color: Colors.blueAccent,
-                            barWidth: 4,
-                            isStrokeCapRound: true,
-                            dotData: FlDotData(
-                              show: true,
-                              getDotPainter: (spot, percent, barData, index) =>
-                                FlDotCirclePainter(
-                                  radius: 4,
-                                  color: Colors.blue.shade700,
-                                  strokeWidth: 2,
-                                  strokeColor: Colors.white,
-                                ),
-                            ),
-                            belowBarData: BarAreaData(
-                              show: true,
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.blueAccent.withOpacity(0.3),
-                                  Colors.blueAccent.withOpacity(0.1),
-                                ],
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                              ),
-                            ),
-                          ),
-                          if (dailyTarget != null)
-                            LineChartBarData(
-                              spots: targetSpots,
-                              isCurved: false,
-                              color: Colors.red,
-                              barWidth: 2,
-                              isStrokeCapRound: true,
-                              dotData: FlDotData(show: false),
-                              dashArray: [5, 5],
-                            ),
-                        ],
-                      ),
-                    ),
-                    AnimatedOpacity(
-                      opacity: _showLeftArrow ? 1.0 : 0.0,
-                      duration: Duration(milliseconds: 200),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          margin: EdgeInsets.only(left: 8),
-                          child: IconButton(
-                            icon: Icon(Icons.chevron_left, size: 36),
-                            onPressed: _goToPreviousPage,
-                            color: Colors.blue.shade700,
-                          ),
-                        ),
-                      ),
-                    ),
-                    AnimatedOpacity(
-                      opacity: _showRightArrow ? 1.0 : 0.0,
-                      duration: Duration(milliseconds: 200),
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Container(
-                          margin: EdgeInsets.only(right: 8),
-                          child: IconButton(
-                            icon: Icon(Icons.chevron_right, size: 36),
-                            onPressed: _goToNextPage,
-                            color: Colors.blue.shade700,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                          ];
+                        }).toList()),
+                      ]);
+                    }),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1102,43 +1324,65 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildLegendDot(Color color, String label,
+      {bool isLine = false, bool isDashed = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        isLine
+            ? SizedBox(
+                width: 20,
+                height: 3,
+                child: CustomPaint(
+                  painter: _DashedLinePainter(color: color, dashed: isDashed),
+                ),
+              )
+            : Container(
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+        const SizedBox(width: 4),
+        Text(label,
+            style: TextStyle(color: Colors.blue.shade700, fontSize: 12)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: Colors.blue.shade50,
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        title: Text(
-          "Home",
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            color: Colors.white,
-          ),
-        ),
+        title: const Text('Home'),
         centerTitle: true,
+        elevation: 0,
         flexibleSpace: Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.blue.shade400, Colors.blueAccent.shade700],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              colors: [Color(0xFF1565C0), Color(0xFF0D47A1)],
             ),
           ),
         ),
-        elevation: 4,
         actions: [
-          IconButton(
-            icon: Icon(Icons.refresh, size: 26, color: Colors.white),
-            tooltip: "Refresh Data",
-            onPressed: () {
-              if (_isSlideshowRunning) {
-                loadData();
-              } else {
-                _refreshCurrentLineData();
-              }
-            },
-            splashRadius: 24,
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.refresh, size: 22),
+              tooltip: 'Refresh Data',
+              onPressed: () {
+                if (_isSlideshowRunning) {
+                  loadData();
+                } else {
+                  _refreshCurrentLineData();
+                }
+              },
+            ),
           ),
         ],
       ),
@@ -1147,13 +1391,26 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      shape: BoxShape.circle,
+                      boxShadow: [BoxShadow(color: Colors.blue.shade100, blurRadius: 16)],
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: CircularProgressIndicator(strokeWidth: 3),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                   Text(
-                    "Loading Production Data...",
+                    'Loading Production Data...',
                     style: TextStyle(
                       color: Colors.blue.shade800,
                       fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -1208,29 +1465,78 @@ class _HomePageState extends State<HomePage> {
                         },
                       ),
                     ),
-                    SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List<Widget>.generate(lineData.length, (int index) {
-                        return GestureDetector(
-                          onTap: () => _goToPage(index),
-                          child: Container(
-                            width: 12.0,
-                            height: 12.0,
-                            margin: EdgeInsets.symmetric(horizontal: 4.0),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _currentPage == index 
-                                  ? Colors.blue.shade700 
-                                  : Colors.grey.shade400,
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: List<Widget>.generate(lineData.length, (int index) {
+                          final isActive = _currentPage == index;
+                          final line = lineData.keys.elementAt(index);
+                          return GestureDetector(
+                            onTap: () => _goToPage(index),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 220),
+                              width: isActive ? 40 : 28,
+                              height: 28,
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              decoration: BoxDecoration(
+                                color: isActive ? Colors.blue.shade700 : Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  'L$line',
+                                  style: TextStyle(
+                                    color: isActive ? Colors.white : Colors.grey.shade600,
+                                    fontSize: 11,
+                                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        );
-                      }),
+                          );
+                        }),
+                      ),
                     ),
-                    SizedBox(height: 16),
+                    const SizedBox(height: 14),
                   ],
                 ),
     );
   }
+}
+
+// ─── Dashed line painter for legend ──────────────────────────────────────────
+class _DashedLinePainter extends CustomPainter {
+  final Color color;
+  final bool dashed;
+  const _DashedLinePainter({required this.color, required this.dashed});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2;
+    if (!dashed) {
+      canvas.drawLine(Offset(0, size.height / 2),
+          Offset(size.width, size.height / 2), paint);
+    } else {
+      double x = 0;
+      while (x < size.width) {
+        canvas.drawLine(
+            Offset(x, size.height / 2),
+            Offset(x + 4 <= size.width ? x + 4 : size.width, size.height / 2),
+            paint);
+        x += 8;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedLinePainter old) => old.color != color;
 }
